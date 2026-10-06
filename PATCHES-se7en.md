@@ -9,13 +9,14 @@ cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 
 ## Modified upstream files
 
-- `package.json` — changes only the package name to `graft-se7en`.
-- `package-lock.json` — keeps the fork package name and updates `undici` to `6.29.0` within its existing compatible range, including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
+- `package.json` — names the fork `graft-se7en` and replaces `gray-matter` with a direct modern `js-yaml` dependency and its development types.
+- `package-lock.json` — keeps the fork package name, removes the obsolete frontmatter dependency chain, and retains `undici` `6.29.0`, including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
 - `README.md` — documents the fork's Pascal/Delphi support and upstream update flow.
 - `src/graph/extract.ts` — adds the optional case-insensitive resolver intent used by Pascal edges.
 - `src/graph/generic.ts` — registers Pascal in the existing WASM language registry and delegates to its focused extractor.
 - `src/graph/resolve.ts` — resolves Pascal identifiers, typed methods, inheritance, and unit imports case-insensitively.
 - `src/graph/workspace.ts` — narrows call tracing by workspace child before applying an optional in-repo path scope.
+- `src/context/node-file.ts`, `src/graph/cards.ts`, `src/ask/ask.ts`, `src/viz/assemble.ts` — use the shared safe frontmatter adapter.
 - `src/mcp/tools.ts` — routes workspace-prefixed file API requests to the owning child graph.
 - `src/hosts/mcp-config.ts` — points the MCP `npx` launch line at `github:ansidium/graft-se7en` so the wiring self-heal never rewrites configs back to the npm registry package.
 - `src/cli-meta.ts` — `graft upgrade` installs from `github:ansidium/graft-se7en` instead of `@nanonets/graft@latest` (which would replace the fork with upstream). npm is launched through the shell on Windows, where it is a `.cmd` shim, so `graft version`, the background update check, and `graft upgrade` work there.
@@ -23,22 +24,26 @@ cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 - `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity). `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`.
 - `src/ask/ask.ts`, `src/context/savings.ts`, `src/claude/format.ts`, `src/claude/session-metrics.ts` — keep locale-stable numeric formatting while retaining upstream's savings reporting.
 - `test/mcp-tools.test.ts` — covers workspace file API routing.
+- `test/covers.test.ts` — exercises the same frontmatter adapter as production.
 - `test/hosts-mcp-config.test.ts`, `test/cli-meta.test.ts`, `test/upkeep.test.ts`, `test/upkeep-hooks.test.ts` — assertions follow the GitHub launch/upgrade lines above; `test/cli-meta.test.ts` also covers how npm is launched on each platform.
 
 ## Added files
 
 - `src/graph/pascal.ts` — Pascal/Delphi symbols, spans, imports, bindings, deduplication, and call extraction.
 - `test/graph-pascal.test.ts` — unit, program, package, include, line-ending, large-file, and call-resolution coverage.
+- `src/util/frontmatter.ts`, `src/util/frontmatter-schema.ts` — the YAML/JSON frontmatter API and safe legacy scalar compatibility, retaining node body bytes and stable serialization.
+- `test/frontmatter.test.ts` — delimiter, scalar, serialization, parser-error, and removed-dependency regression coverage.
 - `scripts/grammars/tree-sitter-pascal.wasm` — prebuilt Pascal grammar for `web-tree-sitter`.
 - `scripts/grammars/tree-sitter-pascal.LICENSE` — upstream grammar license.
 - `PATCHES-se7en.md` — this inventory.
 
 ## Dependency audit
 
-`npm audit` still reports `GHSA-hp3w-g68c-fv3c` through
-`gray-matter -> js-yaml -> argparse -> sprintf-js`. No patched `sprintf-js`
-release is available; the four moderate findings describe this single dependency
-chain. The upstream-compatible `gray-matter` version is retained.
+The shared frontmatter adapter removes `gray-matter` and its obsolete
+`js-yaml -> argparse -> sprintf-js` chain (`GHSA-hp3w-g68c-fv3c`). The modern
+direct YAML dependency uses `argparse` 2 without `sprintf-js`, so the fix also
+applies when this package is installed as a Git/npx dependency. Existing safe
+scalar interpretations are retained without restoring an executable engine.
 
 ## Grammar provenance
 

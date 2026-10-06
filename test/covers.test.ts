@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import matter from "gray-matter";
+import matter from "../src/util/frontmatter.js";
 import { buildContext } from "../src/context/build.js";
 import { buildGraph } from "../src/graph/build.js";
 import { fakeProviders } from "./helpers.js";

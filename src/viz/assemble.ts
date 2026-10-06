@@ -12,7 +12,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import matter from "gray-matter";
+import matter, { type FrontmatterFile } from "../util/frontmatter.js";
 import type { NodeLink, SourceRef } from "../context/node-file.js";
 
 export interface VizNode {
@@ -137,7 +137,7 @@ export function assembleContextGraph(contextDir: string): VizGraph {
   if (existsSync(contextDir)) {
     for (const entry of readdirSync(contextDir).sort()) {
       if (!entry.endsWith(".md")) continue;
-      let parsed: matter.GrayMatterFile<string>;
+      let parsed: FrontmatterFile;
       try {
         parsed = matter(readFileSync(join(contextDir, entry), "utf8"));
       } catch {

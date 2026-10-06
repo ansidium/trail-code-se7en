@@ -23,7 +23,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import matter from "gray-matter";
+import matter from "../util/frontmatter.js";
 import { contentHash, normalizeName } from "../util/id.js";
 import { relPosix, stripTrailingSlashes } from "../util/paths.js";
 // Value-only import of a constant; `write.ts` pulls in nothing from here, so no cycle.
@@ -225,7 +225,7 @@ export function renderNodeFile(node: ContextNode): string {
     generator: { version: MANIFEST_VERSION },
   };
   const body = `${GEN_START}\n${renderGenerated(node)}${GEN_END}\n${node.human}`;
-  // gray-matter appends a trailing newline; keep output stable across runs.
+  // Keep the trailing newline stable across regenerations.
   return matter.stringify(body, data);
 }
 
