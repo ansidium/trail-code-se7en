@@ -1,8 +1,8 @@
 # Se7en patch inventory
 
-This file inventories the fork delta from `NanoNets/context-graph-engine`.
+This file inventories the fork delta from `trailhq/Graft`.
 
-The fork is synchronized with upstream `0.21.1` (`375a37e`). Pascal's
+The fork is synchronized with upstream `0.21.1` (`fe30ead`). Pascal's
 case-insensitive resolution remains compatible with upstream's language-family
 filtering, Swift dispatch, and PHP trait resolution. Regression coverage includes
 cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
@@ -10,7 +10,7 @@ cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 ## Modified upstream files
 
 - `package.json` — changes only the package name to `graft-se7en`.
-- `package-lock.json` — updates the transitive `js-yaml` dependency to `3.15.2`, fixing `GHSA-2883-xcg3-v3hh` within the existing compatible version range.
+- `package-lock.json` — keeps the fork package name and updates `undici` to `6.29.0` within its existing compatible range, including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
 - `README.md` — documents the fork's Pascal/Delphi support and upstream update flow.
 - `src/graph/extract.ts` — adds the optional case-insensitive resolver intent used by Pascal edges.
 - `src/graph/generic.ts` — registers Pascal in the existing WASM language registry and delegates to its focused extractor.
@@ -32,6 +32,13 @@ cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 - `scripts/grammars/tree-sitter-pascal.wasm` — prebuilt Pascal grammar for `web-tree-sitter`.
 - `scripts/grammars/tree-sitter-pascal.LICENSE` — upstream grammar license.
 - `PATCHES-se7en.md` — this inventory.
+
+## Dependency audit
+
+`npm audit` still reports `GHSA-hp3w-g68c-fv3c` through
+`gray-matter -> js-yaml -> argparse -> sprintf-js`. No patched `sprintf-js`
+release is available; the four moderate findings describe this single dependency
+chain. The upstream-compatible `gray-matter` version is retained.
 
 ## Grammar provenance
 
