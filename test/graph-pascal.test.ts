@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGraph } from "../src/graph/build.js";
 import { genericLangOf } from "../src/graph/generic.js";
+import { preparePascalSource } from "../src/graph/pascal.js";
 import { supportedExtensions } from "../src/graph/source-files.js";
 import { readGraph, wiringPath } from "../src/graph/write.js";
 import type { GraphV1, NodeV1 } from "../src/graph/types.js";
@@ -261,6 +262,104 @@ export function probe(runner: TRunner) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// A conditional right after a routine header that wraps only the var section
+// used to swallow every following routine into the first one's span.
+const CONDITIONAL = `unit Conditional;
+
+interface
+
+type
+  TForm1 = class
+    procedure FormShow(Sender: TObject);
+    procedure InitBrowserWithUserAgent;
+    function DialogResultAfterFailSelfUpdate: Integer;
+  end;
+
+implementation
+
+procedure TForm1.FormShow(Sender: TObject);
+{$IF Defined(ARMA3)}
+var
+  s: string;
+{$ENDIF}
+begin
+  if Sender <> nil then
+  begin
+    DialogResultAfterFailSelfUpdate;
+  end;
+end;
+
+procedure TForm1.InitBrowserWithUserAgent;
+begin
+end;
+
+function TForm1.DialogResultAfterFailSelfUpdate: Integer;
+begin
+  InitBrowserWithUserAgent;
+  Result := 0;
+end;
+
+procedure Alternate;
+{$IFDEF FEATURE}
+var
+  i: Integer;
+begin
+  Inc(i);
+end;
+{$ELSE}
+begin
+end;
+{$ENDIF}
+
+procedure AfterAlternate;
+begin
+  Alternate;
+end;
+
+end.
+`.replace(/\n/g, "\r\n");
+
+test("Pascal conditional var sections do not extend a routine into its successors", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "graft-pascal-conditional-"));
+  try {
+    writeFileSync(join(dir, "Conditional.pas"), `﻿${CONDITIONAL}`, "utf8");
+    const result = await buildGraph(dir);
+    assert.deepEqual(result.errors, []);
+    const graph = readGraph(wiringPath(join(dir, "graft")))!;
+
+    for (const [id, span] of [
+      ["Conditional.pas#TForm1.FormShow", "L14-L24"],
+      ["Conditional.pas#TForm1.InitBrowserWithUserAgent", "L26-L28"],
+      ["Conditional.pas#TForm1.DialogResultAfterFailSelfUpdate", "L30-L34"],
+      ["Conditional.pas#Alternate", "L36-L46"],
+      ["Conditional.pas#AfterAlternate", "L48-L51"],
+    ]) {
+      assert.equal(node(graph, id)?.span, span, id);
+    }
+    assert.equal(node(graph, "Conditional.pas#TForm1.FormShow")?.signature, "procedure TForm1.FormShow(Sender: TObject)");
+    for (const [source, target] of [
+      ["Conditional.pas#TForm1.FormShow", "Conditional.pas#TForm1.DialogResultAfterFailSelfUpdate"],
+      ["Conditional.pas#TForm1.DialogResultAfterFailSelfUpdate", "Conditional.pas#TForm1.InitBrowserWithUserAgent"],
+      ["Conditional.pas#AfterAlternate", "Conditional.pas#Alternate"],
+    ]) {
+      assert.ok(graph.edges.some((e) => e.relation === "calls" && e.source === source && e.target === target),
+        `calls: ${source} -> ${target}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pascal source preparation only comments out conditionals that split a routine", () => {
+  const prepared = preparePascalSource(CONDITIONAL);
+  assert.equal(prepared.length, CONDITIONAL.length);
+  assert.match(prepared, /\{ IF Defined\(ARMA3\)\}\r\nvar\r\n  s: string;\r\n\{ ENDIF\}/);
+  assert.match(prepared, /\{\$IFDEF FEATURE\}[\s\S]*\{\$ELSE\}[\s\S]*\{\$ENDIF\}/,
+    "a conditional wrapping whole alternative bodies stays a grammar directive");
+  const untouched = "procedure A;\nbegin\n  {$IFDEF X} B; {$ENDIF}\nend;\n";
+  assert.equal(preparePascalSource(untouched), untouched);
 });
 
 test("Pascal chunked parsing keeps symbols beyond 32 KB", async () => {

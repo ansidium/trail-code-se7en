@@ -27,6 +27,169 @@ export function readPascalWasm(): Buffer | null {
   }
 }
 
+interface PascalToken {
+  text: string;
+  word: string | null;
+  start: number;
+  end: number;
+}
+
+/** A `{$...}` directive and the index of the first significant token after it. */
+interface Directive {
+  token: PascalToken;
+  next: number;
+}
+
+interface ConditionalGroup {
+  open: Directive;
+  branches: Directive[];
+  close: Directive | null;
+}
+
+const ROUTINE_WORDS = new Set(["procedure", "function", "constructor", "destructor"]);
+const ROUTINE_ATTRIBUTES = new Set([
+  "abstract", "assembler", "cdecl", "deprecated", "dispid", "dynamic", "experimental", "export", "external",
+  "far", "final", "forward", "inline", "library", "local", "message", "near", "noreturn", "overload",
+  "override", "pascal", "platform", "register", "reintroduce", "safecall", "static", "stdcall", "unsafe",
+  "varargs", "virtual", "winapi",
+]);
+const BLOCK_OPENERS = new Set(["asm", "begin", "case", "object", "record", "try"]);
+
+/** Significant tokens plus `{$...}` directives; comments and strings are skipped. */
+function pascalTokens(source: string): { tokens: PascalToken[]; directives: Directive[] } {
+  const tokens: PascalToken[] = [];
+  const directives: Directive[] = [];
+  const word = /[\p{L}_][\p{L}\p{N}_]*|\p{N}+/uy;
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (/\s/.test(ch)) {
+      i++;
+    } else if (ch === "/" && source[i + 1] === "/") {
+      const eol = source.indexOf("\n", i);
+      i = eol < 0 ? source.length : eol;
+    } else if (ch === "{") {
+      const close = source.indexOf("}", i);
+      const end = close < 0 ? source.length : close + 1;
+      if (source[i + 1] === "$") directives.push({ token: { text: source.slice(i, end), word: null, start: i, end }, next: tokens.length });
+      i = end;
+    } else if (ch === "(" && source[i + 1] === "*") {
+      const close = source.indexOf("*)", i + 2);
+      i = close < 0 ? source.length : close + 2;
+    } else if (ch === "'") {
+      let j = i + 1;
+      while (j < source.length && source[j] !== "\n" && (source[j] !== "'" || source[j + 1] === "'")) j += source[j] === "'" ? 2 : 1;
+      i = j + 1;
+    } else {
+      word.lastIndex = ch === "&" ? i + 1 : i;
+      const match = word.exec(source);
+      const end = match ? word.lastIndex : i + 1;
+      const text = source.slice(i, end);
+      tokens.push({ text, word: match && ch !== "&" ? normalizedName(text) : null, start: i, end });
+      i = end;
+    }
+  }
+  return { tokens, directives };
+}
+
+/** Indices of `;` tokens that end a routine header or one of its trailing attributes. */
+function routineHeaderEnds(tokens: PascalToken[]): Set<number> {
+  const ends = new Set<number>();
+  let state: "none" | "header" | "after" | "attribute" = "none";
+  let depth = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (state === "header" || state === "attribute") {
+      if (token.text === "(" || token.text === "[") depth++;
+      else if (token.text === ")" || token.text === "]") depth = Math.max(0, depth - 1);
+      else if (token.text === ";" && depth === 0) {
+        ends.add(i);
+        state = "after";
+      }
+      continue;
+    }
+    if (state === "after" && token.word && ROUTINE_ATTRIBUTES.has(token.word)) {
+      state = "attribute";
+      continue;
+    }
+    state = "none";
+    if (token.word && (ROUTINE_WORDS.has(token.word) || (token.word === "operator" && tokens[i - 1]?.word === "class"))) {
+      state = "header";
+      depth = 0;
+    }
+  }
+  return ends;
+}
+
+/** True when a conditional branch is `[local declarations] begin|asm ... end;`. */
+function completeRoutineBody(tokens: PascalToken[]): boolean {
+  const last = tokens.length - 1;
+  if (last < 2 || tokens[last].text !== ";" || tokens[last - 1].word !== "end") return false;
+  const openers: string[] = [];
+  for (let i = 0; i < last; i++) {
+    const word = tokens[i].word;
+    if (!word) continue;
+    if (openers.length === 0 && (ROUTINE_WORDS.has(word) || word === "class" || word === "interface")) return false;
+    if (BLOCK_OPENERS.has(word)) {
+      if (word === "case" && openers.at(-1) === "record") continue;
+      if (word === "object" && tokens[i - 1]?.word === "of") continue;
+      openers.push(word);
+    } else if (word === "end") {
+      const opener = openers.pop();
+      if (!opener) return false;
+      if (openers.length === 0 && (opener === "begin" || opener === "asm")) return i === last - 1;
+    }
+  }
+  return false;
+}
+
+/**
+ * The upstream grammar treats `{$if...}` directly after a routine header as a
+ * wrapper around whole alternative bodies: `{$ifdef A} var..; begin..end;
+ * {$else} begin..end; {$endif}`. A conditional that only wraps part of the
+ * routine, such as its `var` section, sends tree-sitter into error recovery
+ * that swallows every following routine. Turning only those directives into
+ * same-length comments keeps both branches visible, exactly like every other
+ * `{$...}` extra, while preserving byte offsets and lines.
+ */
+export function preparePascalSource(source: string): string {
+  const { tokens, directives } = pascalTokens(source);
+  const headerEnds = routineHeaderEnds(tokens);
+  const groups: ConditionalGroup[] = [];
+  const open: ConditionalGroup[] = [];
+  for (const directive of directives) {
+    const name = /^\{\$([a-z]+)/i.exec(directive.token.text)?.[1]?.toUpperCase() ?? "";
+    if (name === "IF" || name === "IFDEF" || name === "IFNDEF" || name === "IFOPT") {
+      const group: ConditionalGroup = { open: directive, branches: [], close: null };
+      groups.push(group);
+      open.push(group);
+    } else if (name === "ELSE" || name === "ELSEIF") {
+      open.at(-1)?.branches.push(directive);
+    } else if (name === "ENDIF" || name === "IFEND") {
+      const group = open.pop();
+      if (group) group.close = directive;
+    }
+  }
+
+  const neutralize: number[] = [];
+  for (const group of groups) {
+    if (!headerEnds.has(group.open.next - 1)) continue;
+    const bounds = [group.open, ...group.branches];
+    const close = group.close;
+    const wrapsBodies = !!close && /^\{\$end/i.test(close.token.text) &&
+      bounds.every((bound, index) => completeRoutineBody(tokens.slice(bound.next, (bounds[index + 1] ?? close).next)));
+    if (!wrapsBodies) neutralize.push(...[...bounds, ...(close ? [close] : [])].map((bound) => bound.token.start + 1));
+  }
+  if (neutralize.length === 0) return source;
+  let out = "";
+  let from = 0;
+  for (const dollar of neutralize.sort((a, b) => a - b)) {
+    out += `${source.slice(from, dollar)} `;
+    from = dollar + 1;
+  }
+  return out + source.slice(from);
+}
+
 interface TypeDef {
   node: TsNode;
   typeNode: TsNode;
@@ -563,7 +726,7 @@ export function extractPascal(rel: string, source: string, root: TsNode): Extrac
   for (const type of types) {
     type.id = mint(`${rel}#${type.name}`, minted);
     typeByName.set(normalizedName(type.name), type);
-    nodes.push(makeNode(type.id, type.name, type.kind, rel, source, type.node, clean(type.node.text)));
+    nodes.push(makeNode(type.id, type.name, type.kind, rel, source, type.node, clean(source.slice(type.node.startIndex, type.node.endIndex))));
     rawEdges.push({ source: moduleId ?? rel, relation: "contains", targetId: type.id, file: rel, caseInsensitive: true });
     type.parents.forEach((parent, index) => {
       const relation = type.kind === "class" && index > 0 ? "implements" : "extends";
@@ -590,7 +753,7 @@ export function extractPascal(rel: string, source: string, root: TsNode): Extrac
         rel,
         source,
         routine.whole,
-        clean(routine.header.text),
+        clean(source.slice(routine.header.startIndex, routine.header.endIndex)),
         routine.exported,
         routine.owner ?? undefined,
         routine.arity,

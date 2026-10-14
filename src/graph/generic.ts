@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import { contentHash } from "../util/id.js";
 import type { Kind, NodeV1 } from "./types.js";
 import type { ExtractResult, RawEdge } from "./extract.js";
-import { extractPascal, readPascalWasm } from "./pascal.js";
+import { extractPascal, preparePascalSource, readPascalWasm } from "./pascal.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -39,6 +39,8 @@ export interface GenericLang {
   wasm: string;
   wasmBytes?: () => Buffer | null;
   extract?: (rel: string, source: string, root: TsNode) => ExtractResult;
+  /** Same-length rewrite fed to the parser only; `extract` still receives the original source. */
+  prepare?: (source: string) => string;
 }
 
 /** The breadth registry. Add a row + a queries/<name>.scm to support a language.
@@ -59,7 +61,7 @@ export const GENERIC_LANGS: readonly GenericLang[] = [
   { name: "zig", exts: [".zig"], wasm: "zig" },
   { name: "dart", exts: [".dart"], wasm: "dart" }, // surfaced by PR #38 (@muneebshere)
   { name: "clojure", exts: [".clj", ".cljs", ".cljc", ".bb"], wasm: "clojure" },
-  { name: "pascal", exts: [".pas", ".dpr", ".dpk", ".inc"], wasm: "pascal", wasmBytes: readPascalWasm, extract: extractPascal },
+  { name: "pascal", exts: [".pas", ".dpr", ".dpk", ".inc"], wasm: "pascal", wasmBytes: readPascalWasm, extract: extractPascal, prepare: preparePascalSource },
   { name: "nix", exts: [".nix"], wasm: "nix" },
   { name: "lua", exts: [".lua"], wasm: "lua" },
 ];
@@ -89,7 +91,7 @@ const KIND: Record<string, Kind> = {
 
 // Loaded grammars + compiled tags queries, keyed by graft lang name. Populated by
 // warmGenericGrammars; read synchronously by extractGeneric.
-export interface Loaded { language: unknown; query: unknown | null; extract?: GenericLang["extract"] }
+export interface Loaded { language: unknown; query: unknown | null; extract?: GenericLang["extract"]; prepare?: GenericLang["prepare"] }
 const loaded = new Map<string, Loaded>();
 let tsMod: typeof import("web-tree-sitter") | null = null;
 let initPromise: Promise<void> | null = null;
@@ -145,7 +147,7 @@ export async function warmGenericGrammars(langNames: Iterable<string>): Promise<
       if (scm) {
         try { query = new Query(language, scm); } catch { query = null; }
       }
-      loaded.set(name, { language, query, extract: row.extract });
+      loaded.set(name, { language, query, extract: row.extract, prepare: row.prepare });
     } catch {
       /* grammar failed to instantiate — skip; files extract as file-only */
     }
@@ -229,11 +231,12 @@ export function extractGeneric(rel: string, source: string, langName: string): E
   const entry = loaded.get(langName);
   if (!entry || !tsMod) return { nodes, rawEdges };
 
+  const parsed = entry.prepare?.(source) ?? source;
   let tree;
   try {
     const parser = new tsMod.Parser();
     parser.setLanguage(entry.language as never);
-    tree = parser.parse((i: number) => source.slice(i, i + PARSE_CHUNK));
+    tree = parser.parse((i: number) => parsed.slice(i, i + PARSE_CHUNK));
   } catch (err) {
     // A grammar that throws (e.g. a WASM "memory access out of bounds" from an
     // external scanner) is not a per-file syntax problem: swallowing it here left
