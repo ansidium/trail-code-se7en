@@ -55,6 +55,24 @@ const ROUTINE_ATTRIBUTES = new Set([
 ]);
 const BLOCK_OPENERS = new Set(["asm", "begin", "case", "object", "record", "try"]);
 
+/** A nesting level seen while scanning for inline declarations, with the paren depth it opened at. */
+interface Frame {
+  kind: "asm" | "begin" | "case" | "record" | "repeat" | "routine" | "try";
+  parens: number;
+}
+
+const STATEMENT_FRAMES = new Set<Frame["kind"]>(["begin", "case", "repeat", "try"]);
+/** Tokens after which `var` inside a statement list starts an inline declaration. */
+const STATEMENT_STARTS = new Set([
+  ";", "begin", "do", "else", "except", "finalization", "finally", "initialization", "repeat", "then", "try",
+]);
+/** Words that may directly follow `procedure`/`function` in an anonymous method. */
+const ANONYMOUS_BODY_STARTS = new Set(["asm", "begin", "const", "label", "type", "var"]);
+/** Words that cannot occur in a statement list: seeing one there means the block scan lost track. */
+const DECLARATION_WORDS = new Set([
+  "class", "exports", "interface", "label", "resourcestring", "threadvar", "type", "uses",
+]);
+
 /** Significant tokens plus `{$...}` directives; comments and strings are skipped. */
 function pascalTokens(source: string): { tokens: PascalToken[]; directives: Directive[] } {
   const tokens: PascalToken[] = [];
@@ -149,11 +167,10 @@ function completeRoutineBody(tokens: PascalToken[]): boolean {
  * {$else} begin..end; {$endif}`. A conditional that only wraps part of the
  * routine, such as its `var` section, sends tree-sitter into error recovery
  * that swallows every following routine. Turning only those directives into
- * same-length comments keeps both branches visible, exactly like every other
- * `{$...}` extra, while preserving byte offsets and lines.
+ * comments (`{$` → `{ `) keeps both branches visible, exactly like every other
+ * `{$...}` extra. Returns the `$` of each such directive.
  */
-export function preparePascalSource(source: string): string {
-  const { tokens, directives } = pascalTokens(source);
+function splitRoutineConditionals(tokens: PascalToken[], directives: Directive[]): Array<[number, number]> {
   const headerEnds = routineHeaderEnds(tokens);
   const groups: ConditionalGroup[] = [];
   const open: ConditionalGroup[] = [];
@@ -171,23 +188,137 @@ export function preparePascalSource(source: string): string {
     }
   }
 
-  const neutralize: number[] = [];
+  const neutralize: Array<[number, number]> = [];
   for (const group of groups) {
     if (!headerEnds.has(group.open.next - 1)) continue;
     const bounds = [group.open, ...group.branches];
     const close = group.close;
     const wrapsBodies = !!close && /^\{\$end/i.test(close.token.text) &&
       bounds.every((bound, index) => completeRoutineBody(tokens.slice(bound.next, (bounds[index + 1] ?? close).next)));
-    if (!wrapsBodies) neutralize.push(...[...bounds, ...(close ? [close] : [])].map((bound) => bound.token.start + 1));
+    if (wrapsBodies) continue;
+    for (const bound of [...bounds, ...(close ? [close] : [])]) neutralize.push([bound.token.start + 1, bound.token.start + 2]);
   }
-  if (neutralize.length === 0) return source;
+  return neutralize;
+}
+
+/** `for var X[: T] in` → `for     X       in`: the grammar only knows `for var` with `:=`. */
+function forInVariable(tokens: PascalToken[], forIndex: number): Array<[number, number]> {
+  const keyword = tokens[forIndex + 1];
+  const name = forIndex + 2;
+  if (!tokens[name]?.word) return [];
+  // A counted loop's initializer may itself contain `in`. Only a for-in
+  // header can continue straight with `in` or an optional type annotation.
+  if (tokens[name + 1]?.word !== "in" && tokens[name + 1]?.text !== ":") return [];
+  for (let k = name + 1; k < tokens.length; k++) {
+    const { word, text } = tokens[k];
+    if (text === ":" && tokens[k + 1]?.text === "=") return [];
+    if (word === "in") {
+      const annotation: Array<[number, number]> = k > name + 1 ? [[tokens[name + 1].start, tokens[k].start]] : [];
+      return [[keyword.start, keyword.end], ...annotation];
+    }
+    if (word === "to" || word === "downto" || word === "do" || text === ";") return [];
+  }
+  return [];
+}
+
+/** `var A, B: T;` → `var A   : T;`: the grammar only knows inline declarations of one name. */
+function inlineNameList(tokens: PascalToken[], varIndex: number): Array<[number, number]> {
+  let last = varIndex + 1;
+  if (!tokens[last]?.word) return [];
+  while (tokens[last + 1]?.text === "," && tokens[last + 2]?.word) last += 2;
+  if (last === varIndex + 1 || tokens[last + 1]?.text !== ":" || tokens[last + 2]?.text === "=") return [];
+  return [[tokens[varIndex + 2].start, tokens[last].end]];
+}
+
+/**
+ * Delphi 10.3+ inline variables that the pinned grammar rejects: `for var X in`
+ * and `var A, B: T;` inside a statement list. Error recovery from the first one
+ * can swallow every following routine. Blanking the `var` keyword (plus any
+ * type annotation) of a for-in loop, and every name but the first of an inline
+ * list, leaves forms the grammar parses; the extractor still reads routine
+ * signatures and bodies from the original source. Statement lists are
+ * tracked by block nesting rather than by the parse, so a `var` section of a
+ * routine, an anonymous method, or the unit, and a `var` parameter, all stay
+ * untouched.
+ */
+function unsupportedInlineVariables(tokens: PascalToken[]): Array<[number, number]> {
+  const blanks: Array<[number, number]> = [];
+  const frames: Frame[] = [];
+  let parens = 0;
+  const push = (kind: Frame["kind"]): void => {
+    frames.push({ kind, parens });
+  };
+  const reset = (): void => {
+    frames.length = 0;
+    parens = 0;
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const { word, text } = tokens[i];
+    const top = frames.at(-1);
+    const inStatements = !!top && STATEMENT_FRAMES.has(top.kind);
+    if (top?.kind === "asm") {
+      if (word !== "end") continue;
+      frames.pop();
+      if (frames.at(-1)?.kind === "routine") frames.pop();
+      continue;
+    }
+    if (text === "(" || text === "[") parens++;
+    else if (text === ")" || text === "]") parens = Math.max(0, parens - 1);
+    if (!word) continue;
+    if (word === "for" && tokens[i + 1]?.word === "var") {
+      blanks.push(...forInVariable(tokens, i));
+    } else if (ROUTINE_WORDS.has(word)) {
+      const next = tokens[i + 1]?.word;
+      // Only an anonymous method can start inside a statement list; a named
+      // header there means a conditional left the block scan unbalanced.
+      if (inStatements && (word === "procedure" || word === "function") && (!next || ANONYMOUS_BODY_STARTS.has(next))) push("routine");
+      else reset();
+    } else if (word === "implementation" || word === "initialization" || word === "finalization") {
+      reset();
+      if (word !== "implementation") push("begin");
+    } else if (inStatements && DECLARATION_WORDS.has(word)) {
+      reset();
+    } else if (word === "begin" || word === "asm") {
+      push(word);
+    } else if (word === "end") {
+      // The body of an anonymous method also closes the method itself.
+      if (frames.pop()?.kind === "begin" && frames.at(-1)?.kind === "routine") frames.pop();
+    } else if (word === "until") {
+      if (top?.kind === "repeat") frames.pop();
+    } else if (!top) {
+      continue;
+    } else if (word === "record" || ((word === "case" || word === "repeat" || word === "try") && inStatements)) {
+      push(word);
+    } else if (word === "var" && inStatements && parens === top.parens) {
+      const previous = tokens[i - 1];
+      if (STATEMENT_STARTS.has(previous.word ?? previous.text)) blanks.push(...inlineNameList(tokens, i));
+    }
+  }
+  return blanks;
+}
+
+/** Replace everything in `ranges` except line breaks with spaces, keeping offsets and lines. */
+function blankRanges(source: string, ranges: Array<[number, number]>): string {
   let out = "";
   let from = 0;
-  for (const dollar of neutralize.sort((a, b) => a - b)) {
-    out += `${source.slice(from, dollar)} `;
-    from = dollar + 1;
+  for (const [start, end] of ranges.sort((a, b) => a[0] - b[0])) {
+    if (end <= from) continue;
+    const first = Math.max(start, from);
+    out += source.slice(from, first) + source.slice(first, end).replace(/[^\r\n]/g, " ");
+    from = end;
   }
   return out + source.slice(from);
+}
+
+/**
+ * Same-length rewrite fed only to the parser (extractors get the original
+ * source): it hides the syntax the pinned grammar mis-parses badly enough to
+ * swallow the following routines.
+ */
+export function preparePascalSource(source: string): string {
+  const { tokens, directives } = pascalTokens(source);
+  const blanks = [...splitRoutineConditionals(tokens, directives), ...unsupportedInlineVariables(tokens)];
+  return blanks.length === 0 ? source : blankRanges(source, blanks);
 }
 
 interface TypeDef {

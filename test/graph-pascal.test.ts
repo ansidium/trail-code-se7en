@@ -362,6 +362,166 @@ test("Pascal source preparation only comments out conditionals that split a rout
   assert.equal(preparePascalSource(untouched), untouched);
 });
 
+// Delphi 10.3+ inline variables: the pinned grammar rejects `for var X in` and
+// `var A, B: T;` inside a statement block, and the first of them used to swallow
+// every following routine into one ERROR node.
+const INLINE_VARS = `unit InlineVars;
+
+interface
+
+type
+  TWorker = class
+    procedure ProcessItems(Sender: TObject);
+    procedure ResetState(Sender: TObject);
+    procedure RefreshState;
+    procedure Measure(const AName: string; var AFirst, ASecond: Integer);
+  end;
+
+implementation
+
+procedure TWorker.ProcessItems(Sender: TObject);
+var
+  Total, Count: Int64;
+begin
+  if Sender <> nil then
+  begin
+{$IFDEF USE_NESTED_ENUMERATION}
+    if TDirectory.Exists(GetInputRoot) then
+      for var InputFile in TDirectory.GetFiles(
+        GetInputRoot, '*.tmp',
+        TSearchOption.soAllDirectories) do
+        try
+          TFile.Delete(InputFile);
+        except
+        end;
+{$ENDIF}
+    var BytesRead, BytesTotal: UInt64;
+    var Blocks := TStringList.Create;
+    for var I := 0 to Blocks.Count - 1 do
+      Inc(BytesTotal, I);
+    for var Pair: TPair<string, Integer> in Lookup do
+      Inc(BytesRead, Pair.Value);
+    RefreshState;
+  end;
+end;
+
+procedure TWorker.ResetState(Sender: TObject);
+var
+  Width, Height: Integer;
+begin
+  Width := 0;
+  Height := Width;
+  RefreshState;
+end;
+
+procedure TWorker.RefreshState;
+begin
+end;
+
+procedure TWorker.Measure(const AName: string;
+  var AFirst, ASecond: Integer);
+begin
+  for var Alias in AName.Split([',']) do
+    if Alias <> '' then
+      Inc(AFirst);
+end;
+
+procedure AfterMeasure(Worker: TWorker);
+var
+  First, Second: Integer;
+begin
+  Worker.Measure('', First, Second);
+end;
+
+end.
+`.replace(/\n/g, "\r\n");
+
+test("Pascal inline variables do not extend a routine into its successors", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "graft-pascal-inline-var-"));
+  try {
+    writeFileSync(join(dir, "InlineVars.pas"), `﻿${INLINE_VARS}`, "utf8");
+    const result = await buildGraph(dir);
+    assert.deepEqual(result.errors, []);
+    const graph = readGraph(wiringPath(join(dir, "graft")))!;
+
+    for (const [id, span] of [
+      ["InlineVars.pas#TWorker.ProcessItems", "L15-L39"],
+      ["InlineVars.pas#TWorker.ResetState", "L41-L48"],
+      ["InlineVars.pas#TWorker.RefreshState", "L50-L52"],
+      ["InlineVars.pas#TWorker.Measure", "L54-L60"],
+      ["InlineVars.pas#AfterMeasure", "L62-L67"],
+    ]) {
+      assert.equal(node(graph, id)?.span, span, id);
+    }
+    assert.equal(node(graph, "InlineVars.pas#TWorker.ResetState")?.signature,
+      "procedure TWorker.ResetState(Sender: TObject)");
+    for (const [source, target] of [
+      ["InlineVars.pas#TWorker.ProcessItems", "InlineVars.pas#TWorker.RefreshState"],
+      ["InlineVars.pas#TWorker.ResetState", "InlineVars.pas#TWorker.RefreshState"],
+      ["InlineVars.pas#AfterMeasure", "InlineVars.pas#TWorker.Measure"],
+    ]) {
+      assert.ok(graph.edges.some((e) => e.relation === "calls" && e.source === source && e.target === target),
+        `calls: ${source} -> ${target}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pascal source preparation blanks only unsupported inline variable syntax", () => {
+  const prepared = preparePascalSource(INLINE_VARS);
+  assert.equal(prepared.length, INLINE_VARS.length);
+  assert.equal(prepared.split("\r\n").length, INLINE_VARS.split("\r\n").length);
+  assert.ok(prepared.includes("      for     InputFile in TDirectory.GetFiles(\r\n"));
+  assert.ok(prepared.includes(`    var BytesRead${" ".repeat(", BytesTotal".length)}: UInt64;\r\n`));
+  assert.ok(prepared.includes(`    for     Pair${" ".repeat(": TPair<string, Integer> ".length)}in Lookup do\r\n`));
+  assert.ok(prepared.includes("  for     Alias in AName.Split([',']) do\r\n"));
+  for (const kept of [
+    "    var Blocks := TStringList.Create;\r\n",
+    "    for var I := 0 to Blocks.Count - 1 do\r\n",
+    "var\r\n  Total, Count: Int64;\r\n",
+    "var\r\n  Width, Height: Integer;\r\n",
+    "procedure Measure(const AName: string; var AFirst, ASecond: Integer);\r\n",
+    "  var AFirst, ASecond: Integer);\r\n",
+  ]) {
+    assert.ok(prepared.includes(kept), `kept: ${JSON.stringify(kept)}`);
+  }
+
+  // An anonymous method's own var section stays a declaration section, while
+  // inline lists inside its body and after it are statements again.
+  const anonymous = [
+    "procedure P;",
+    "begin",
+    "  Run(procedure",
+    "    var",
+    "      Left, Right: Integer;",
+    "    begin",
+    "      var Low, High: Integer;",
+    "    end);",
+    "  var A, B: Integer;",
+    "end;",
+    "",
+    "var",
+    "  GlobalA, GlobalB: Integer;",
+    "",
+  ].join("\n");
+  assert.equal(preparePascalSource(anonymous), anonymous
+    .replace("var Low, High:", "var Low      :")
+    .replace("var A, B:", "var A   :"));
+});
+
+test("Pascal counted loops with membership initializers stay unchanged", () => {
+  for (const loop of [
+    "for var I := Ord(Flag in [One, Two]) to 3 do Tick;",
+    "for var I := Ord(Flag in [One, Two]) downto 0 do Tick;",
+    "for var I: Integer := Ord(Flag in [One, Two]) to 3 do Tick;",
+    "for var I := StartValue to Ord(Flag in [One, Two]) do Tick;",
+  ]) {
+    const source = `procedure Count;\nbegin\n  ${loop}\nend;\n`;
+    assert.equal(preparePascalSource(source), source, loop);
+  }
+});
+
 test("Pascal chunked parsing keeps symbols beyond 32 KB", async () => {
   const dir = mkdtempSync(join(tmpdir(), "graft-pascal-large-"));
   try {

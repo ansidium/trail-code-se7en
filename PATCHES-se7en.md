@@ -9,13 +9,16 @@ case-insensitive resolution remains compatible with upstream's language-family
 filtering, Swift dispatch, and PHP trait resolution. Regression coverage includes
 cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 
+Fork release `0.23.2` retains that upstream base and fixes Delphi inline-variable
+parsing without rewriting counted-loop membership expressions.
+
 ## Modified upstream files
 
 - `package.json` — names the fork `trail-code-se7en`, exports both CLI entry points, identifies the fork repository, and replaces `gray-matter` with modern `js-yaml` and development types.
 - `package-lock.json` — keeps the fork package name, removes the obsolete frontmatter dependency chain, and retains `undici` `6.29.0`, including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
 - `README.md` — documents the fork's Pascal/Delphi support and upstream update flow.
 - `src/graph/extract.ts` — adds the optional case-insensitive resolver intent used by Pascal edges.
-- `src/graph/generic.ts` — registers Pascal in the existing WASM language registry, delegates to its focused extractor, and adds an optional same-length `prepare` hook whose output is fed only to the parser (Pascal uses it for conditional directives; extractors still receive the original source).
+- `src/graph/generic.ts` — registers Pascal in the existing WASM language registry, delegates to its focused extractor, and adds an optional same-length `prepare` hook whose output is fed only to the parser (Pascal uses it for conditional directives and unsupported inline declarations; extractors still receive the original source).
 - `src/graph/resolve.ts` — resolves Pascal identifiers, typed methods, inheritance, and unit imports case-insensitively.
 - `src/graph/workspace.ts` — narrows call tracing by workspace child before applying an optional in-repo path scope.
 - `src/context/node-file.ts`, `src/graph/cards.ts`, `src/ask/ask.ts`, `src/viz/assemble.ts`, `src/util/front-matter.ts` — use the shared safe frontmatter adapter, including new upstream consumers and inert executable-engine fences.
@@ -34,9 +37,9 @@ cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 
 ## Added files
 
-- `src/graph/pascal.ts` — Pascal/Delphi symbols, spans, imports, bindings, deduplication, and call extraction. Before parsing, `preparePascalSource` turns `{$IF…}`/`{$ELSE}`/`{$ENDIF}` groups that directly follow a routine header but do not wrap whole alternative bodies (for example a conditional `var` section) into same-length comments; the pinned grammar's `pp()` wrapper otherwise swallows every following routine.
+- `src/graph/pascal.ts` — Pascal/Delphi symbols, spans, imports, bindings, deduplication, and call extraction. Before parsing, `preparePascalSource` neutralizes conditionals that split a routine and unsupported inline `for var X[: T] in`/`var A, B: T` syntax with same-length edits. Routine sections, parameters, supported counted loops and original source spans are preserved, including counted-loop initializers containing `in` expressions.
 - `src/fork.ts` — the package identity and GitHub installer shared by upgrades, agent configuration and hook templates.
-- `test/graph-pascal.test.ts` — unit, program, package, include, line-ending, large-file, conditional-directive span, and call-resolution coverage.
+- `test/graph-pascal.test.ts` — unit, program, package, include, line-ending, large-file, conditional/inline-variable span, counted-loop preparation, and call-resolution coverage.
 - `src/util/frontmatter.ts`, `src/util/frontmatter-schema.ts` — the YAML/JSON frontmatter API and safe legacy scalar compatibility, retaining node body bytes and stable serialization.
 - `test/frontmatter.test.ts` — delimiter, scalar, serialization, parser-error, and removed-dependency regression coverage.
 - `scripts/grammars/tree-sitter-pascal.wasm` — prebuilt Pascal grammar for `web-tree-sitter`.

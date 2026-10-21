@@ -45,20 +45,24 @@ test('a graft repo moves to trail once the trail command is installed, and only 
   const repo = tmpRepo('move-e2e');
   spawnSync('git', ['init', '-q'], { cwd: repo });
   const home = mkdtempSync(join(tmpdir(), 'move-home-'));
-  const saved = { path: process.env.PATH, home: process.env.HOME, trailHome: process.env.TRAIL_HOME, brand: process.env[BRAND_ENV] };
+  const saved = { path: process.env.PATH, home: process.env.HOME, trailHome: process.env.TRAIL_HOME, brand: process.env[BRAND_ENV], trailSwitch: process.env.GRAFT_NO_TRAIL_SWITCH };
   process.env.HOME = home;
   process.env.TRAIL_HOME = join(home, '.trail');
   const savedProfile = process.env.USERPROFILE;
   process.env.USERPROFILE = home;
   try {
+    // A real Trail installation on the developer's PATH must not move the
+    // fixture before this test reaches its simulated installation step.
+    process.env.GRAFT_NO_TRAIL_SWITCH = '1';
     delete process.env[BRAND_ENV];
     runInit(repo, { build: false, global: false });
     assert.ok(existsSync(join(repo, '.claude', 'skills', 'graft', 'SKILL.md')), 'wired as graft');
     // Stamp it at this version, so only the move can trigger a refresh.
     runUpkeep(repo, runningVersion(), { background: false, home });
-    assert.equal(shouldMoveToTrail(repo), false, 'no trail command yet');
+    assert.equal(shouldMoveToTrail(repo, { ...process.env, PATH: binWith('graft'), GRAFT_NO_TRAIL_SWITCH: undefined }), false, 'no trail command on the supplied PATH');
     assert.equal(shouldMoveToTrail(repo, { ...process.env, PATH: binWith('trail'), GRAFT_NO_TRAIL_SWITCH: '1' }), false, 'a machine can opt out');
 
+    delete process.env.GRAFT_NO_TRAIL_SWITCH;
     process.env.PATH = `${binWith('trail')}${delimiter}${saved.path}`;
     const first = runUpkeep(repo, runningVersion(), { background: false, home });
     assert.match(first.lines.join('\n'), /graft is now trail, and this repo just moved to it/);
@@ -74,7 +78,7 @@ test('a graft repo moves to trail once the trail command is installed, and only 
   } finally {
     process.env.PATH = saved.path;
     if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
-    for (const [k, v] of [['HOME', saved.home], ['TRAIL_HOME', saved.trailHome], [BRAND_ENV, saved.brand]] as const)
+    for (const [k, v] of [['HOME', saved.home], ['TRAIL_HOME', saved.trailHome], [BRAND_ENV, saved.brand], ['GRAFT_NO_TRAIL_SWITCH', saved.trailSwitch]] as const)
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });

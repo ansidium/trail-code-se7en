@@ -224,8 +224,9 @@ test('a session start that moves a graft repo to trail moves the other agents to
   const repo = tmpRepo('move-hosts');
   spawnSync('git', ['init', '-q'], { cwd: repo });
   const home = mkdtempSync(join(tmpdir(), 'move-hosts-home-'));
-  const saved = { PATH: process.env.PATH, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, TRAIL_HOME: process.env.TRAIL_HOME, [BRAND_ENV]: process.env[BRAND_ENV] };
-  Object.assign(process.env, { HOME: home, USERPROFILE: home, TRAIL_HOME: join(home, '.trail') });
+  const saved = { PATH: process.env.PATH, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, TRAIL_HOME: process.env.TRAIL_HOME, GRAFT_NO_TRAIL_SWITCH: process.env.GRAFT_NO_TRAIL_SWITCH, [BRAND_ENV]: process.env[BRAND_ENV] };
+  // Keep the graft fixture stable even when Trail is already installed globally.
+  Object.assign(process.env, { HOME: home, USERPROFILE: home, TRAIL_HOME: join(home, '.trail'), GRAFT_NO_TRAIL_SWITCH: '1' });
   try {
     delete process.env[BRAND_ENV];
     runInit(repo, { build: false, global: false });
@@ -237,6 +238,7 @@ test('a session start that moves a graft repo to trail moves the other agents to
     const bin = mkdtempSync(join(tmpdir(), 'bin-trail-'));
     writeFileSync(join(bin, 'trail'), '#!/bin/sh\nexit 0\n');
     chmodSync(join(bin, 'trail'), 0o755);
+    delete process.env.GRAFT_NO_TRAIL_SWITCH;
     process.env.PATH = `${bin}${delimiter}${saved.PATH}`;
     assert.match(runUpkeep(repo, runningVersion(), { background: false, home }).lines.join('\n'), /just moved to it/);
 
