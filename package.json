@@ -1,6 +1,6 @@
 {
-  "name": "graft-se7en",
-  "version": "0.21.1",
+  "name": "trail-code-se7en",
+  "version": "0.23.1",
   "description": "Build a repo's context graph as a folder of linked markdown files: a local, regenerable cache that every query keeps in sync with your code.",
   "keywords": [
     "ai",
@@ -14,11 +14,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/trailhq/Graft.git"
+    "url": "git+https://github.com/ansidium/trail-code-se7en.git"
   },
-  "homepage": "https://github.com/trailhq/Graft#readme",
+  "homepage": "https://github.com/ansidium/trail-code-se7en#readme",
   "bugs": {
-    "url": "https://github.com/trailhq/Graft/issues"
+    "url": "https://github.com/ansidium/trail-code-se7en/issues"
   },
   "publishConfig": {
     "access": "public"
@@ -34,7 +34,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "graft": "dist/cli.js"
+    "trail": "dist/bin/trail.js",
+    "graft": "dist/bin/graft.js"
   },
   "files": [
     "dist",

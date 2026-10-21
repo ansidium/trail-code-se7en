@@ -10,8 +10,8 @@ import type { SpawnSyncOptions } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toPosixPath } from "./util/paths.js";
-
-const PKG_NAME = "@nanonets/graft";
+import { brand, PACKAGE_FOR } from "./brand.js";
+import { FORK_INSTALL, FORK_PACKAGE } from "./fork.js";
 
 /** Locates package.json relative to a module URL (works for both `dist/cli.js`
  * running one level under the published package root, and `src/cli.ts` running
@@ -24,6 +24,23 @@ export function resolvePackageJsonPath(moduleUrl: string): string {
   }
   return candidates[0];
 }
+
+/**
+ * The npm package this code was installed as: `@trailhq/trail-code`, or
+ * `@nanonets/graft` (the same code under its old name). Upgrades and update
+ * checks go to the package actually installed, not to the name typed.
+ */
+export function readPackageName(moduleUrl: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(resolvePackageJsonPath(moduleUrl), "utf8")) as { name?: string };
+    return pkg.name ?? PACKAGE_FOR.graft;
+  } catch {
+    return PACKAGE_FOR.graft;
+  }
+}
+
+const PKG_NAME = readPackageName(import.meta.url);
+const UPDATE_PACKAGE = PKG_NAME === FORK_PACKAGE ? PACKAGE_FOR.trail : PKG_NAME;
 
 /** Reads the version of the graft package this module was loaded from. */
 export function readCurrentVersion(moduleUrl: string): string {
@@ -74,7 +91,7 @@ export interface NpmViewResult {
 
 /** `npm view <pkg> version`, offline-safe: any failure (no npm, no network,
  * timeout) resolves to `{ ok: false }` rather than throwing. */
-export function getNpmViewVersion(pkgName: string = PKG_NAME, timeoutMs = 2000): NpmViewResult {
+export function getNpmViewVersion(pkgName: string = UPDATE_PACKAGE, timeoutMs = 2000): NpmViewResult {
   try {
     const res = npmSync(["view", pkgName, "version"], {
       encoding: "utf8",
@@ -92,13 +109,13 @@ export function getNpmViewVersion(pkgName: string = PKG_NAME, timeoutMs = 2000):
 
 /** Pure formatter for `graft version` — no I/O, easy to unit-test. */
 export function formatVersionReport(current: string, latest: NpmViewResult): string {
-  const lines = [`graft ${current}`];
+  const lines = [`${brand()} ${current}`];
   if (!latest.ok || !latest.version) {
     lines.push("latest: unreachable (offline?)");
   } else if (latest.version === current) {
     lines.push(`latest on npm: ${current} ✓ up to date`);
   } else {
-    lines.push(`latest on npm: ${latest.version} — run graft upgrade`);
+    lines.push(`latest on npm: ${latest.version} — run ${brand()} upgrade`);
   }
   return lines.join("\n");
 }
@@ -142,23 +159,26 @@ export interface UpgradeResult {
   errorMessage?: string;
   oldVersion?: string;
   newVersion?: string;
+  /** The `trail` package's version, when `graft upgrade` installed it alongside. */
+  trailVersion?: string;
 }
 
 /** Pure formatter for a finished upgrade — no I/O, easy to unit-test. */
 export function formatUpgradeReport(result: UpgradeResult): string {
   if (!result.ran) {
     return (
-      "running via npx — npx already fetches the latest graft on every run.\n" +
-      "For a permanent install: npm install -g github:ansidium/graft-se7en"
+      `running via npx — npx already fetches the latest ${brand()} on every run.\n` +
+      `For a permanent install: npm install -g ${FORK_INSTALL}`
     );
   }
   if (!result.ok) {
-    return `✗ npm install -g github:ansidium/graft-se7en failed${result.errorMessage ? `: ${result.errorMessage}` : ""}`;
+    return `✗ npm install -g ${FORK_INSTALL} failed${result.errorMessage ? `: ${result.errorMessage}` : ""}`;
   }
-  return `graft ${result.oldVersion ?? "?"} → ${result.newVersion ?? result.oldVersion ?? "?"}`;
+  const line = `${brand()} ${result.oldVersion ?? "?"} → ${result.newVersion ?? result.oldVersion ?? "?"}`;
+  return result.trailVersion ? `${line}\n✓ trail ${result.trailVersion} installed too — graft keeps working, and trail is its new name` : line;
 }
 
-/** Runs `npm install -g github:ansidium/graft-se7en` (inheriting stdio so the user
+/** Installs the Delphi-capable fork from GitHub (inheriting stdio so the user
  * sees npm's own progress/errors), then re-reads the freshly installed
  * version. No-ops with guidance when running via npx. */
 export function runUpgrade(moduleUrl: string): UpgradeResult {
@@ -166,10 +186,11 @@ export function runUpgrade(moduleUrl: string): UpgradeResult {
   if (isRunningViaNpx(moduleUrl)) {
     return { ran: false, ok: true, oldVersion };
   }
-  const res = npmSync(["install", "-g", "github:ansidium/graft-se7en"], { stdio: "inherit" });
+  // Both CLI names ship in one package, never alongside a Delphi-less upstream.
+  const res = npmSync(["install", "-g", FORK_INSTALL], { stdio: "inherit" });
   if (res.error || (res.status ?? 1) !== 0) {
     return { ran: true, ok: false, oldVersion, errorMessage: res.error?.message };
   }
-  const newVersion = readGlobalInstalledVersion("graft-se7en") ?? readGlobalInstalledVersion(PKG_NAME) ?? oldVersion;
+  const newVersion = readGlobalInstalledVersion(FORK_PACKAGE) ?? oldVersion;
   return { ran: true, ok: true, oldVersion, newVersion };
 }

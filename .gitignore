@@ -28,3 +28,9 @@ transcripts/
 
 # graft's local repository settings — not committed.
 /.graft/
+
+# The @trailhq/trail package, laid out by scripts/pack-trail.mjs.
+/build/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/.trail/cache/

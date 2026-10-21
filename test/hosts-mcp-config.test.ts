@@ -16,7 +16,7 @@ test('cursor/gemini/kiro get repo-local JSON entries', () => {
   const w = registerMcpConfigs(repo, ['cursor', 'gemini', 'kiro'], { home });
   assert.deepEqual(w.map((x) => x.action), ['created', 'created', 'created']);
   const cursor = JSON.parse(readFileSync(join(repo, '.cursor', 'mcp.json'), 'utf8'));
-  assert.deepEqual(cursor.mcpServers.graft, { command: 'npx', args: ['-y', 'github:ansidium/graft-se7en', 'mcp'] });
+  assert.deepEqual(cursor.mcpServers.graft, { command: 'npx', args: ['-y', '--package', 'github:ansidium/trail-code-se7en', 'graft', 'mcp'] });
   assert.ok(existsSync(join(repo, '.gemini', 'settings.json')));
   assert.ok(existsSync(join(repo, '.kiro', 'settings', 'mcp.json')));
 });
@@ -51,7 +51,7 @@ test('agents id: codex TOML + opencode JSON, gated on home dirs', () => {
   assert.equal(w.length, 2);
   const toml = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
   assert.match(toml, /^\[mcp_servers\.graft\]$/m);
-  assert.match(toml, /"github:ansidium\/graft-se7en"/);
+  assert.match(toml, /"github:ansidium\/trail-code-se7en"/);
   const oc = JSON.parse(readFileSync(join(repo, 'opencode.json'), 'utf8'));
   assert.equal(oc.mcp.graft.type, 'local');
   const again = registerMcpConfigs(repo, ['agents'], { home });
@@ -75,7 +75,7 @@ test('grok gets a repo-local TOML MCP section', () => {
   assert.deepEqual(w.map((x) => x.action), ['created']);
   const toml = readFileSync(join(repo, '.grok', 'config.toml'), 'utf8');
   assert.match(toml, /^\[mcp_servers\.graft\]$/m);
-  assert.match(toml, /"github:ansidium\/graft-se7en"/);
+  assert.match(toml, /"github:ansidium\/trail-code-se7en"/);
   const again = registerMcpConfigs(repo, ['grok'], { home });
   assert.deepEqual(again.map((x) => x.action), ['unchanged']);
 });
@@ -97,7 +97,7 @@ test('serverEntry prefers the installed binary and falls back to npx', () => {
   delete process.env.GRAFT_MCP_NPX;
   try {
     assert.deepEqual(serverEntry({ onPath: true }), { command: 'graft', args: ['mcp'] });
-    assert.deepEqual(serverEntry({ onPath: false }), { command: 'npx', args: ['-y', 'github:ansidium/graft-se7en', 'mcp'] });
+    assert.deepEqual(serverEntry({ onPath: false }), { command: 'npx', args: ['-y', '--package', 'github:ansidium/trail-code-se7en', 'graft', 'mcp'] });
     for (const e of [serverEntry({ onPath: true }), serverEntry({ onPath: false })]) {
       assert.ok(!e.command.startsWith('/'), 'never an absolute path — configs get shared');
     }
@@ -109,4 +109,20 @@ test('serverEntry prefers the installed binary and falls back to npx', () => {
 test('GRAFT_MCP_NPX overrides an installed binary', () => {
   process.env.GRAFT_MCP_NPX = '1';
   assert.equal(serverEntry({ onPath: true }).command, 'npx', 'the escape hatch wins');
+});
+
+test('default wiring pins the Delphi fork instead of trusting another package on PATH', () => {
+  const saved = process.env.GRAFT_MCP_NPX;
+  delete process.env.GRAFT_MCP_NPX;
+  try {
+    for (const brand of ['trail', 'graft'] as const) {
+      assert.deepEqual(serverEntry({ brand }), {
+        command: 'npx',
+        args: ['-y', '--package', 'github:ansidium/trail-code-se7en', brand, 'mcp'],
+      });
+    }
+  } finally {
+    if (saved === undefined) delete process.env.GRAFT_MCP_NPX;
+    else process.env.GRAFT_MCP_NPX = saved;
+  }
 });

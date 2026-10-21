@@ -34,7 +34,7 @@ test('formatVersionReport: offline / unreachable', () => {
 test('formatUpgradeReport: npx no-op suggests a permanent install', () => {
   const out = formatUpgradeReport({ ran: false, ok: true, oldVersion: '0.4.4' });
   assert.match(out, /npx/);
-  assert.match(out, /npm install -g github:ansidium\/graft-se7en/);
+  assert.match(out, /npm install -g github:ansidium\/trail-code-se7en/);
 });
 
 test('formatUpgradeReport: successful upgrade shows old -> new', () => {
@@ -103,9 +103,9 @@ test('npmInvocation: Windows runs npm through the shell as one command line', ()
 });
 
 test('npmInvocation: other platforms spawn npm directly with its args', () => {
-  assert.deepEqual(npmInvocation(['install', '-g', 'github:ansidium/graft-se7en'], 'linux'), {
+  assert.deepEqual(npmInvocation(['install', '-g', 'github:ansidium/trail-code-se7en'], 'linux'), {
     command: 'npm',
-    args: ['install', '-g', 'github:ansidium/graft-se7en'],
+    args: ['install', '-g', 'github:ansidium/trail-code-se7en'],
     shell: false,
   });
 });

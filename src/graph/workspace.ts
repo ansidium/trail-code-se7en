@@ -52,6 +52,7 @@ import { grepGraph, type GrepGroup, type GrepResult } from "../search/grep.js";
 import { formatGrepResult, zeroHitNote } from "../search/grep-cli.js";
 import { withSavings, type Savings } from "../context/savings.js";
 import { normalizePathPrefix } from "../util/paths.js";
+import { cmd } from "../brand.js";
 
 /** The parent index written to `<parent>/graft/workspace.json`. Nodes/edges
  * never live at the parent — they live in each child's own `graft/`. */
@@ -162,7 +163,7 @@ export function loadWorkspaceGraphs(root: string, override?: string): WorkspaceG
 export function coverageNote(g: WorkspaceGraphs): string {
   if (g.missing.length === 0) return "";
   const total = g.loaded.length + g.missing.length;
-  return `${g.loaded.length} of ${total} workspace repos have graphs; run graft build to cover ${g.missing.join(", ")}`;
+  return `${g.loaded.length} of ${total} workspace repos have graphs; run ${cmd("graft build")} to cover ${g.missing.join(", ")}`;
 }
 
 /** Prefix a hit pointer with its child dir so a `path:span` (or concept path
@@ -505,7 +506,7 @@ export function federateAsk(
         alsoMatched: unmatched.filter((match) => !federatedSet.has(match.scope)),
       };
     } else {
-      result.note = `no matching nodes across ${wg.loaded.length} workspace repo(s) — try different words, or \`graft build\` at a child`;
+      result.note = `no matching nodes across ${wg.loaded.length} workspace repo(s) — try different words, or \`${cmd("graft build")}\` at a child`;
     }
     if (note) result.note = result.note ? `${result.note}\n${note}` : note;
     return result;
@@ -552,7 +553,7 @@ export function federateAsk(
     const federated = fused.federated.length ? fused.federated : [...new Set(hits.map((h) => h.scope!))];
     result.scopes = { federated, alsoMatched };
   } else {
-    result.note = `no matching nodes across ${wg.loaded.length} workspace repo(s) — try different words, or \`graft build\` at a child`;
+    result.note = `no matching nodes across ${wg.loaded.length} workspace repo(s) — try different words, or \`${cmd("graft build")}\` at a child`;
   }
   if (note) result.note = result.note ? `${result.note}\n${note}` : note;
   return result;
@@ -649,7 +650,7 @@ export async function federateCheck(
       lines.push(`${child}/: STALE (${bits.join(", ")})`);
     }
   }
-  for (const child of wg.missing) lines.push(`${child}/: not built (run graft build)`);
+  for (const child of wg.missing) lines.push(`${child}/: not built (run ${cmd("graft build")})`);
   const cov = coverageNote(wg);
   if (cov) lines.push("", cov);
   return { text: lines.join("\n") + "\n", ok };
@@ -700,7 +701,7 @@ export function federateCallers(
 
   const cov = coverageNote(wg);
   if (!found) {
-    const base = `no symbol "${symbol}" in any of the ${wg.loaded.length} workspace repo(s) — check spelling or run graft build`;
+    const base = `no symbol "${symbol}" in any of the ${wg.loaded.length} workspace repo(s) — check spelling or run ${cmd("graft build")}`;
     return { text: cov ? `${base}\n${cov}` : base, found: false };
   }
   let text = blocks.join("\n\n");

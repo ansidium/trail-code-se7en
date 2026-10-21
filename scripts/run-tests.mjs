@@ -50,14 +50,16 @@ const gitEnv = {
 // that spawns the CLI, or calls runInit/runRetract, without its own `home` rewired
 // the developer's real agents: one run of this suite removed Codex's graft MCP
 // server and hooks from ~/.codex. `homedir()` reads HOME on posix and USERPROFILE on
-// Windows, so both point here; CLAUDE_CONFIG_DIR would route the Claude writes
-// around it, so it is dropped. The scratch home carries its own ~/.gitconfig
+// Windows, so both point here; CLAUDE_CONFIG_DIR and TRAIL_HOME would route
+// writes around it, so they are dropped. The scratch home carries its own ~/.gitconfig
 // identity — as a file rather than in gitEnv, because GIT_CONFIG_* outranks the
 // repo-level identity some tests set and assert on.
 const home = mkdtempSync(join(tmpdir(), "graft-test-home-"));
 writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = graft tests\n\temail = tests@graft.invalid\n");
-const env = { ...process.env, ...gitEnv, HOME: home, USERPROFILE: home };
+// The migration tests opt in; other fixtures must retain their original brand.
+const env = { ...process.env, ...gitEnv, HOME: home, USERPROFILE: home, GRAFT_NO_TRAIL_SWITCH: "1" };
 delete env.CLAUDE_CONFIG_DIR;
+delete env.TRAIL_HOME;
 
 const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...files], {
   cwd: repoRoot,
