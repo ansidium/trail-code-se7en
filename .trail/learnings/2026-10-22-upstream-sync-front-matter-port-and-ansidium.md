@@ -22,7 +22,7 @@ touches:
 - New upstream tests that `import matter from "gray-matter"` must read through `../src/util/front-matter.js` (cards.test.ts did).
 
 ## Tried and ruled out
-- `npm install -g github:ansidium/trail-code-se7en` on npm 11.9 / Windows: the git clone's inner `npm install` inherits the global flag, retires the installed package, installs no devDependencies, and `prepare` fails with `tsc` not found. It leaves `trail`/`graft` without `dist/` until reinstalled. `trail upgrade` runs the same command. Working paths: `npm pack` a local build and `npm install -g <tgz>`, or `npx --package github:ansidium/trail-code-se7en` (its cache is not global; first start ~70 s, cached ~7 s).
+- `npm install -g github:ansidium/trail-code-se7en` on npm 11.9 / Windows: the git clone's inner `npm install` inherits the global flag, retires the installed package, installs no devDependencies, and `prepare` fails with `tsc` not found. It leaves `trail`/`graft` without `dist/` until reinstalled. Fixed in 0.23.4: `trail upgrade` now packs the git source into a temp folder and installs the tarball (`installFork` in src/cli-meta.ts), and every hint says `npx -y --package github:ansidium/trail-code-se7en trail upgrade` (`FORK_SETUP`), which also does the first install (~3 min; a global `trail upgrade` ~2 min). The npx MCP launch is not global and was never affected (first start ~70 s, cached ~7 s).
 
 ## Watch out
 - Escapes like ` ` typed into a Bash/Python command reach the file as raw U+2028, which breaks a regex literal. Fix files with `String.fromCharCode` in a script file instead.
