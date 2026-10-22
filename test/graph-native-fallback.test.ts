@@ -117,7 +117,7 @@ test("the notice names only the grammar that failed, with the install that fixes
     "⚠ kotlin: basic parsing only, the native parser is missing. To fix: npm install -g --allow-scripts=tree-sitter-kotlin @trailhq/trail",
   );
   assert.match(nativeFallbackNotice(r.nativeFallback, "@nanonets/graft")!, / @nanonets\/graft$/);
-  assert.match(nativeFallbackNotice(r.nativeFallback, "trail-code-se7en")!, / github:ansidium\/trail-code-se7en$/);
+  assert.match(nativeFallbackNotice(r.nativeFallback, "trail-code-se7en")!, /To fix: npx -y --package github:ansidium\/trail-code-se7en trail upgrade --allow-scripts=tree-sitter-kotlin$/);
 });
 
 test("a repo without kotlin never asks for its grammar", async () => {

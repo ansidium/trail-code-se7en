@@ -87,7 +87,7 @@ test('session-start surfaces a cached upgrade nudge', async () => {
   const repo = wiredRepo('hook-nudge');
   const ctx = contextOf(await runHook('session-start', repo, homeWithCache('hook-nudge-home', '99.0.0')));
   assert.match(ctx, /graft .* → 99\.0\.0 available/);
-  assert.match(ctx, /npm i -g github:ansidium\/trail-code-se7en/);
+  assert.match(ctx, /npx -y --package github:ansidium\/trail-code-se7en trail upgrade/);
 });
 
 test('an up-to-date install gets no nudge', async () => {

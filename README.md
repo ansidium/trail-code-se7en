@@ -6,14 +6,21 @@ modules, `uses` imports, class/record/interface types, implementation-backed
 routine spans, interface/implementation deduplication, conditional directives,
 and case-insensitive call resolution. The Pascal grammar ships as a prebuilt
 WASM asset; consumers do not need a Delphi compiler or native grammar build.
-Upstream `0.23.1` does not include this Pascal extractor.
+Upstream Trail-code does not include this Pascal extractor.
 
-Install this fork (both `trail` and the compatible `graft` command):
+Install or upgrade this fork (both `trail` and the compatible `graft` command):
 
 ```sh
-npm install -g github:ansidium/trail-code-se7en
+npx -y --package github:ansidium/trail-code-se7en trail upgrade
 trail init
 ```
+
+Later upgrades are `trail upgrade`. Don't use `npm install -g github:…` for
+this fork: npm builds a git package by running `npm install` in its clone, and
+under a global install that inner run stays global, skips the build tools and
+leaves the installed copy without `dist/`. `trail upgrade` runs `npm pack` on
+the GitHub source first and installs the built tarball only if the build
+succeeded.
 
 The package is named `trail-code-se7en`. Upgrades and generated agent wiring
 stay on this fork so Delphi support is not silently replaced by upstream.

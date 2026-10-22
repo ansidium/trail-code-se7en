@@ -405,7 +405,7 @@ test("the trail skill's description names when to use its commands, and the body
   assert.match(data.description, /trail ask before grepping/);
   assert.match(data.description, /When a task took real digging, save a learning with trail note and commit it with the change/);
   assert.match(data.description, /\.trail\/learnings\//, "where the learnings are, for a Claude without trail");
-  assert.match(data.description, /npm install -g github:ansidium\/trail-code-se7en/, "and how to get the Delphi-capable command");
+  assert.match(data.description, /npx -y --package github:ansidium\/trail-code-se7en trail upgrade/, "and how to get the Delphi-capable command");
   assert.doesNotMatch(data.description, /graft/, "nothing about the old name or the graft\/ folder");
   const moments = content.indexOf("## When to reach for trail");
   assert.ok(moments >= 0 && moments < content.indexOf("## The tools"), "the moments come before the tool docs");

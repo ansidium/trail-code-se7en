@@ -19,7 +19,7 @@
 import { createRequire } from "node:module";
 import type Parser from "tree-sitter";
 import type { Language } from "./extract.js";
-import { FORK_INSTALL, FORK_PACKAGE } from "../fork.js";
+import { FORK_PACKAGE, FORK_SETUP } from "../fork.js";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -169,8 +169,9 @@ export function nativeFallbackNotice(fallback: NativeFallback | undefined, packa
   const what = fallback.languages.length === 1 ? "the native parser is" : "the native parsers are";
   const head = `⚠ ${langs}: basic parsing only, ${what} missing.`;
   if (fallback.packages.length === 0) return head;
-  const install = packageName === FORK_PACKAGE ? FORK_INSTALL : packageName;
-  return `${head} To fix: npm install -g --allow-scripts=${fallback.packages.join(",")} ${install}`;
+  const allow = `--allow-scripts=${fallback.packages.join(",")}`;
+  if (packageName === FORK_PACKAGE) return `${head} To fix: ${FORK_SETUP} ${allow}`;
+  return `${head} To fix: npm install -g ${allow} ${packageName}`;
 }
 
 /** Test seam: replace how native modules are required (null restores the real

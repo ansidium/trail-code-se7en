@@ -405,9 +405,10 @@ program
   });
 
 grouped(program.command("upgrade"), GROUP.setup)
-  .description(`Upgrade the globally installed ${brand()} to the latest version on npm`)
-  .action(() => {
-    const result = runUpgrade(import.meta.url);
+  .description(`Install or upgrade ${brand()} globally, from the Delphi-capable fork on GitHub`)
+  .option("--allow-scripts <packages>", "comma-separated packages npm may run install scripts for (native parsers)")
+  .action((opts: { allowScripts?: string }) => {
+    const result = runUpgrade(import.meta.url, opts.allowScripts ? opts.allowScripts.split(",") : []);
     console.log(formatUpgradeReport(result));
     if (result.ran && !result.ok) process.exit(1);
     if (!TRAIL && result.ok && result.trailVersion) moveHereToTrail(process.cwd());

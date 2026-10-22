@@ -33,6 +33,7 @@ import { HOSTS, hostRelPath } from './hosts/registry.js';
 import { markersFor } from './hosts/sections.js';
 import { getNpmViewVersion, readCurrentVersion } from './cli-meta.js';
 import { brand } from './brand.js';
+import { FORK_SETUP } from './fork.js';
 import { graftCliPath } from './claude/paths.js';
 
 /**
@@ -154,7 +155,7 @@ export function maybeRefreshInBackground(
  * "you're up to date". */
 export function formatUpdateNudge(current: string, latest: string | null | undefined): string | null {
   if (!isNewer(latest, current)) return null;
-  return `⬆ upstream ${brand()} ${current} → ${latest} available: sync the fork, then \`npm i -g github:ansidium/trail-code-se7en\` (restart your agent after).`;
+  return `⬆ upstream ${brand()} ${current} → ${latest} available: sync the fork, then \`${FORK_SETUP}\` (restart your agent after).`;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -4,14 +4,15 @@
  * Split out of cli.ts so the formatting helpers can be unit-tested with
  * injected results instead of hitting the network from tests.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toPosixPath } from "./util/paths.js";
 import { brand, PACKAGE_FOR } from "./brand.js";
-import { FORK_INSTALL, FORK_PACKAGE } from "./fork.js";
+import { FORK_INSTALL, FORK_PACKAGE, FORK_SETUP } from "./fork.js";
 
 /** Locates package.json relative to a module URL (works for both `dist/cli.js`
  * running one level under the published package root, and `src/cli.ts` running
@@ -152,7 +153,7 @@ export function readGlobalInstalledVersion(pkgName: string = PKG_NAME): string |
 }
 
 export interface UpgradeResult {
-  /** True when `npm install -g` actually ran (false for the npx no-op path). */
+  /** True when the install ran. */
   ran: boolean;
   ok: boolean;
   /** Present when ran=true and the install failed. */
@@ -165,32 +166,59 @@ export interface UpgradeResult {
 
 /** Pure formatter for a finished upgrade — no I/O, easy to unit-test. */
 export function formatUpgradeReport(result: UpgradeResult): string {
-  if (!result.ran) {
-    return (
-      `running via npx — npx already fetches the latest ${brand()} on every run.\n` +
-      `For a permanent install: npm install -g ${FORK_INSTALL}`
-    );
-  }
   if (!result.ok) {
-    return `✗ npm install -g ${FORK_INSTALL} failed${result.errorMessage ? `: ${result.errorMessage}` : ""}`;
+    return `✗ installing ${FORK_INSTALL} failed${result.errorMessage ? `: ${result.errorMessage}` : ""}. Retry with: ${FORK_SETUP}`;
   }
-  const line = `${brand()} ${result.oldVersion ?? "?"} → ${result.newVersion ?? result.oldVersion ?? "?"}`;
+  const line = `${brand()} ${result.oldVersion ?? "(not installed)"} → ${result.newVersion ?? result.oldVersion ?? "?"}`;
   return result.trailVersion ? `${line}\n✓ trail ${result.trailVersion} installed too — graft keeps working, and trail is its new name` : line;
 }
 
-/** Installs the Delphi-capable fork from GitHub (inheriting stdio so the user
- * sees npm's own progress/errors), then re-reads the freshly installed
- * version. No-ops with guidance when running via npx. */
-export function runUpgrade(moduleUrl: string): UpgradeResult {
-  const oldVersion = readCurrentVersion(moduleUrl);
-  if (isRunningViaNpx(moduleUrl)) {
-    return { ran: false, ok: true, oldVersion };
+/** Package names npm's `--allow-scripts` takes: a comma-joined list, nothing a shell would read. */
+const ALLOW_SCRIPTS = /^[@\w./-]+(?:,[@\w./-]+)*$/;
+
+/**
+ * Installs the Delphi-capable fork from GitHub in two steps, because
+ * `npm install -g github:…` can't. npm builds a git dependency by running its
+ * own `npm install` in the clone, and under a global install that inner run
+ * inherits the global flag (npm 11 on Windows): it installs no devDependencies,
+ * `prepare` stops on a missing `tsc`, and the copy already installed is left
+ * without its `dist/`. `npm pack` builds the clone outside any global install;
+ * `npm install -g` then only unpacks the finished tarball, so the installed
+ * copy is replaced only by one that built.
+ */
+export function installFork(allowScripts: readonly string[] = []): { ok: boolean; errorMessage?: string } {
+  const list = allowScripts.join(",");
+  if (list && !ALLOW_SCRIPTS.test(list)) return { ok: false, errorMessage: `not a package list: ${list}` };
+  const dir = mkdtempSync(join(tmpdir(), "trail-upgrade-"));
+  // A global flag inherited from an npm script would put the pack's build back in global mode.
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.toLowerCase() === "npm_config_global") delete env[k];
+  try {
+    const pack = npmSync(["pack", FORK_INSTALL], { cwd: dir, env, stdio: ["ignore", "ignore", "inherit"] });
+    if (pack.error || (pack.status ?? 1) !== 0) return { ok: false, errorMessage: pack.error?.message ?? "npm pack could not build it" };
+    // Relative and checked, so the Windows shell line never carries a path it would split.
+    const tarball = readdirSync(dir).find((f) => /^[\w.-]+\.tgz$/.test(f));
+    if (!tarball) return { ok: false, errorMessage: "npm pack left no tarball" };
+    const res = npmSync(["install", "-g", ...(list ? [`--allow-scripts=${list}`] : []), `./${tarball}`], { cwd: dir, env, stdio: "inherit" });
+    if (res.error || (res.status ?? 1) !== 0) return { ok: false, errorMessage: res.error?.message };
+    return { ok: true };
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS temp cleaner gets it */
+    }
   }
+}
+
+/** Installs the fork (inheriting stdio so the user sees npm's own progress and
+ * errors), then re-reads the freshly installed version. From npx too: there,
+ * `${FORK_SETUP}` is how the fork gets installed for good. */
+export function runUpgrade(moduleUrl: string, allowScripts: readonly string[] = []): UpgradeResult {
+  const oldVersion = isRunningViaNpx(moduleUrl) ? (readGlobalInstalledVersion(FORK_PACKAGE) ?? undefined) : readCurrentVersion(moduleUrl);
   // Both CLI names ship in one package, never alongside a Delphi-less upstream.
-  const res = npmSync(["install", "-g", FORK_INSTALL], { stdio: "inherit" });
-  if (res.error || (res.status ?? 1) !== 0) {
-    return { ran: true, ok: false, oldVersion, errorMessage: res.error?.message };
-  }
+  const res = installFork(allowScripts);
+  if (!res.ok) return { ran: true, ok: false, oldVersion, errorMessage: res.errorMessage };
   const newVersion = readGlobalInstalledVersion(FORK_PACKAGE) ?? oldVersion;
   return { ran: true, ok: true, oldVersion, newVersion };
 }

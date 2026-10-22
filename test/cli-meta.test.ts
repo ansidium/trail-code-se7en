@@ -10,6 +10,7 @@ import {
   readCurrentVersion,
   isRunningViaNpx,
   npmInvocation,
+  installFork,
 } from '../src/cli-meta.js';
 
 // --- formatVersionReport: pure formatting, injected npm-view results (no network) ---
@@ -31,10 +32,9 @@ test('formatVersionReport: offline / unreachable', () => {
 
 // --- formatUpgradeReport: pure formatting, injected upgrade results (no network, no spawn) ---
 
-test('formatUpgradeReport: npx no-op suggests a permanent install', () => {
-  const out = formatUpgradeReport({ ran: false, ok: true, oldVersion: '0.4.4' });
-  assert.match(out, /npx/);
-  assert.match(out, /npm install -g github:ansidium\/trail-code-se7en/);
+test('formatUpgradeReport: a first install from npx has no old version', () => {
+  const out = formatUpgradeReport({ ran: true, ok: true, newVersion: '0.4.5' });
+  assert.equal(out, 'graft (not installed) → 0.4.5');
 });
 
 test('formatUpgradeReport: successful upgrade shows old -> new', () => {
@@ -46,6 +46,14 @@ test('formatUpgradeReport: failed install surfaces the error', () => {
   const out = formatUpgradeReport({ ran: true, ok: false, oldVersion: '0.4.4', errorMessage: 'ENOENT' });
   assert.match(out, /failed/);
   assert.match(out, /ENOENT/);
+  assert.match(out, /Retry with: npx -y --package github:ansidium\/trail-code-se7en trail upgrade/);
+  assert.doesNotMatch(out, /npm install -g github:/, 'never the command that breaks a global install');
+});
+
+test('installFork refuses an allow-scripts list a shell would read, before running npm', () => {
+  const res = installFork(['tree-sitter', 'x & calc']);
+  assert.equal(res.ok, false);
+  assert.match(res.errorMessage ?? '', /not a package list/);
 });
 
 // --- resolvePackageJsonPath / readCurrentVersion: real filesystem, no network ---
