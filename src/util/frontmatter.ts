@@ -3,7 +3,7 @@
  * markdown body. Keeping it here avoids shipping a second YAML parser and the
  * obsolete CLI formatter dependency it brought in through gray-matter.
  */
-import { load, dump } from "js-yaml";
+import { load, dump, type LoadOptions } from "js-yaml";
 import { FRONTMATTER_SCHEMA } from "./frontmatter-schema.js";
 
 export interface FrontmatterFile {
@@ -12,11 +12,16 @@ export interface FrontmatterFile {
   language: string;
 }
 
+export interface ParseOptions {
+  /** Handed to js-yaml, which calls it as it opens and closes each YAML node. */
+  listener?: LoadOptions["listener"];
+}
+
 function isYaml(language: string): boolean {
   return /^(yaml|yml)$/i.test(language);
 }
 
-export function parseFrontmatter(input: string | Buffer): FrontmatterFile {
+export function parseFrontmatter(input: string | Buffer, opts: ParseOptions = {}): FrontmatterFile {
   const content = (Buffer.isBuffer(input) ? input.toString("utf8") : input).replace(/^\uFEFF/, "");
   const file: FrontmatterFile = { data: {}, content, language: "yaml" };
   // A leading markdown rule such as "----" is not an opening delimiter.
@@ -38,7 +43,7 @@ export function parseFrontmatter(input: string | Buffer): FrontmatterFile {
   file.content = closing < 0 ? "" : rest.slice(closing + 4).replace(/^\r/, "").replace(/^\n/, "");
   const nonComment = header.replace(/^\s*#[^\n]+/gm, "").trim();
   if (nonComment) {
-    const data = isYaml(language) ? load(header, { schema: FRONTMATTER_SCHEMA }) : JSON.parse(header);
+    const data = isYaml(language) ? load(header, { schema: FRONTMATTER_SCHEMA, listener: opts.listener }) : JSON.parse(header);
     // The old frontmatter reader normalized null/undefined in its excerpt pass.
     file.data = (data ?? {}) as Record<string, unknown>;
   }
@@ -52,7 +57,9 @@ function newline(content: string): string {
 export function stringifyFrontmatter(input: string, data: object): string {
   const file = parseFrontmatter(input);
   const combined = { ...file.data, ...data };
-  const header = (isYaml(file.language) ? dump(combined, { schema: FRONTMATTER_SCHEMA }) : JSON.stringify(combined, null, 2)).trim();
+  // `noRefs`: an object used twice is written out twice, never as an anchor and
+  // alias, which the shared reader refuses.
+  const header = (isYaml(file.language) ? dump(combined, { schema: FRONTMATTER_SCHEMA, noRefs: true }) : JSON.stringify(combined, null, 2)).trim();
   const body = newline(file.content);
   return header === "{}" ? body : `---\n${header}\n---\n${body}`;
 }

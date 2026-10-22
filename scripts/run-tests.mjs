@@ -44,6 +44,12 @@ const gitEnv = {
   GIT_CONFIG_KEY_1: "tag.gpgsign", GIT_CONFIG_VALUE_1: "false",
 };
 
+// Tests make thousands of scratch repos and homes under the temp folder and
+// don't all remove them: a day of runs left over 50,000 folders (6 GB). Give the
+// run its own temp folder and remove it at the end, whatever the outcome.
+const runTmp = mkdtempSync(join(tmpdir(), "trail-test-run-"));
+const tmpEnv = { TMPDIR: runTmp, TEMP: runTmp, TMP: runTmp };
+
 // The whole run gets a throwaway home. `graft init` writes outside the repo — hooks
 // and a helper under ~/.claude, ~/.claude.json, ~/.codex's hooks.json and
 // config.toml — and first retracts every agent it wasn't asked to wire. So a test
@@ -53,11 +59,14 @@ const gitEnv = {
 // Windows, so both point here; CLAUDE_CONFIG_DIR and TRAIL_HOME would route
 // writes around it, so they are dropped. The scratch home carries its own ~/.gitconfig
 // identity — as a file rather than in gitEnv, because GIT_CONFIG_* outranks the
-// repo-level identity some tests set and assert on.
-const home = mkdtempSync(join(tmpdir(), "graft-test-home-"));
+// repo-level identity some tests set and assert on. It lives in the run's temp
+// folder, so the cleanup below removes it too.
+const home = mkdtempSync(join(runTmp, "home-"));
 writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = graft tests\n\temail = tests@graft.invalid\n");
-// The migration tests opt in; other fixtures must retain their original brand.
-const env = { ...process.env, ...gitEnv, HOME: home, USERPROFILE: home, GRAFT_NO_TRAIL_SWITCH: "1" };
+// A graft repo moves to trail when a session opens on a machine with the trail
+// command, so a contributor who has trail installed would see test repos move.
+// Off for the run; the tests of the move turn it back on.
+const env = { ...process.env, ...gitEnv, ...tmpEnv, HOME: home, USERPROFILE: home, GRAFT_NO_TRAIL_SWITCH: "1" };
 delete env.CLAUDE_CONFIG_DIR;
 delete env.TRAIL_HOME;
 
@@ -66,11 +75,10 @@ const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...file
   stdio: "inherit",
   env,
 });
-
 try {
-  rmSync(home, { recursive: true, force: true });
+  rmSync(runTmp, { recursive: true, force: true });
 } catch {
-  /* a straggler still holding a file there; the OS temp cleaner gets it */
+  /* best effort: a locked file on Windows must not fail the run */
 }
 
 if (result.error) {

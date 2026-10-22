@@ -2,26 +2,29 @@
 
 This file inventories the fork delta from `trailhq/Trail-Code`.
 
-The fork is synchronized with upstream `0.23.1` (`b1211ef`) and is named
+The fork is synchronized with upstream `main` after `0.23.1` (`22aa846`) and is named
 `trail-code-se7en`. Its primary command is `trail`; `graft` remains a compatible
 alias from the same package, not a second installation. Pascal's
 case-insensitive resolution remains compatible with upstream's language-family
 filtering, Swift dispatch, and PHP trait resolution. Regression coverage includes
 cross-unit Pascal inheritance and mixed Pascal/TypeScript name collisions.
 
-Fork release `0.23.2` retains that upstream base and fixes Delphi inline-variable
-parsing without rewriting counted-loop membership expressions.
+Fork release `0.23.2` fixed Delphi inline-variable parsing without rewriting
+counted-loop membership expressions. Fork release `0.23.3` carries that fix onto
+the newer upstream base, including Gleam support, `web-tree-sitter` `0.27` (the
+checked-in Pascal grammar still loads under it), and upstream's refusal of YAML
+anchors and aliases, ported onto the fork's `js-yaml` adapter.
 
 ## Modified upstream files
 
 - `package.json` — names the fork `trail-code-se7en`, exports both CLI entry points, identifies the fork repository, and replaces `gray-matter` with modern `js-yaml` and development types.
-- `package-lock.json` — keeps the fork package name, removes the obsolete frontmatter dependency chain, and retains `undici` `6.29.0`, including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
+- `package-lock.json` — keeps the fork package name, removes the obsolete frontmatter dependency chain, and keeps `undici` at `6.29.1` or later (upstream locks `6.28.0`), including the fixes for `GHSA-rfgv-xxqx-mfg5`, `GHSA-3wwx-pv8p-q78v`, and `GHSA-r53p-7pc4-xj5r`.
 - `README.md` — documents the fork's Pascal/Delphi support and upstream update flow.
 - `src/graph/extract.ts` — adds the optional case-insensitive resolver intent used by Pascal edges.
 - `src/graph/generic.ts` — registers Pascal in the existing WASM language registry, delegates to its focused extractor, and adds an optional same-length `prepare` hook whose output is fed only to the parser (Pascal uses it for conditional directives and unsupported inline declarations; extractors still receive the original source).
-- `src/graph/resolve.ts` — resolves Pascal identifiers, typed methods, inheritance, and unit imports case-insensitively.
+- `src/graph/resolve.ts` — resolves Pascal identifiers, typed methods, inheritance, and unit imports case-insensitively. The Pascal import branch sits before upstream's C, Rust, PHP and Gleam branches.
 - `src/graph/workspace.ts` — narrows call tracing by workspace child before applying an optional in-repo path scope.
-- `src/context/node-file.ts`, `src/graph/cards.ts`, `src/ask/ask.ts`, `src/viz/assemble.ts`, `src/util/front-matter.ts` — use the shared safe frontmatter adapter, including new upstream consumers and inert executable-engine fences.
+- `src/context/node-file.ts`, `src/graph/cards.ts`, `src/ask/ask.ts`, `src/viz/assemble.ts`, `src/util/front-matter.ts` — use the shared safe frontmatter adapter, including new upstream consumers and inert executable-engine fences. `front-matter.ts` keeps upstream's API (`refused`, `scalars`, `textList`, `warnSkipped`) and its anchor/alias refusal, applied through the adapter's `js-yaml` `listener` instead of gray-matter.
 - `src/mcp/tools.ts` — routes workspace-prefixed file API requests to the owning child graph.
 - `src/hosts/mcp-config.ts` — defaults both MCP brands to an explicit `npx --package github:ansidium/trail-code-se7en <brand> mcp`, so an official binary on PATH cannot silently remove Delphi support. The explicit binary override remains available to callers.
 - `src/cli-meta.ts` — both upgrade commands install the GitHub fork; update checks follow the official Trail version without installing it. npm is launched correctly through its Windows `.cmd` shim.
@@ -29,7 +32,7 @@ parsing without rewriting counted-loop membership expressions.
 - `src/brand.ts`, `src/claude/hook-layers.ts` — recognize fork-aware Trail shims so global/repo hooks do not double-run or falsely report a stranded installation.
 - `src/claude/skill-template.ts`, `scripts/postinstall.mjs` — installation guidance and postinstall branding use the renamed fork.
 - `src/upkeep.ts` — update nudges retain the running brand and direct maintainers to synchronize and reinstall the fork.
-- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity). `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`.
+- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity), created inside upstream's per-run temp folder so one cleanup removes both. `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`.
 - `src/ask/ask.ts`, `src/context/savings.ts`, `src/claude/format.ts`, `src/claude/session-metrics.ts` — keep locale-stable numeric formatting while retaining upstream's savings reporting.
 - `test/mcp-tools.test.ts` — covers workspace file API routing.
 - `test/covers.test.ts` — exercises the same frontmatter adapter as production.
@@ -40,7 +43,7 @@ parsing without rewriting counted-loop membership expressions.
 - `src/graph/pascal.ts` — Pascal/Delphi symbols, spans, imports, bindings, deduplication, and call extraction. Before parsing, `preparePascalSource` neutralizes conditionals that split a routine and unsupported inline `for var X[: T] in`/`var A, B: T` syntax with same-length edits. Routine sections, parameters, supported counted loops and original source spans are preserved, including counted-loop initializers containing `in` expressions.
 - `src/fork.ts` — the package identity and GitHub installer shared by upgrades, agent configuration and hook templates.
 - `test/graph-pascal.test.ts` — unit, program, package, include, line-ending, large-file, conditional/inline-variable span, counted-loop preparation, and call-resolution coverage.
-- `src/util/frontmatter.ts`, `src/util/frontmatter-schema.ts` — the YAML/JSON frontmatter API and safe legacy scalar compatibility, retaining node body bytes and stable serialization.
+- `src/util/frontmatter.ts`, `src/util/frontmatter-schema.ts` — the YAML/JSON frontmatter API and safe legacy scalar compatibility, retaining node body bytes and stable serialization. Parsing accepts a `js-yaml` `listener`; serialization writes with `noRefs`, so nothing it writes is refused on read.
 - `test/frontmatter.test.ts` — delimiter, scalar, serialization, parser-error, and removed-dependency regression coverage.
 - `scripts/grammars/tree-sitter-pascal.wasm` — prebuilt Pascal grammar for `web-tree-sitter`.
 - `scripts/grammars/tree-sitter-pascal.LICENSE` — upstream grammar license.
