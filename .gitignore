@@ -17,9 +17,8 @@ graft/
 # Session transcripts and prompt traces — local analysis, not product.
 transcripts/
 
-# Claude Code settings — regenerated per machine by `graft init`, never shared
-# and never part of a PR diff (the hook helpers/skills alongside them stay tracked).
-.claude/settings.json
+# Trail's portable SessionStart hook lives in .claude/settings.json and is shared.
+# Personal hooks, permissions and statusline stay machine-local.
 .claude/settings.local.json
 
 # Cursor project config — written per machine by `graft init` (hooks, MCP, rule),

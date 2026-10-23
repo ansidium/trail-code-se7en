@@ -1,0 +1,3 @@
+# Trail regenerates these portable files with LF on every platform.
+/.claude/settings.json text eol=lf
+/.trail/hook.cjs text eol=lf
