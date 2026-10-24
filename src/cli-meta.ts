@@ -116,7 +116,7 @@ export function formatVersionReport(current: string, latest: NpmViewResult): str
   } else if (latest.version === current) {
     lines.push(`latest on npm: ${current} ✓ up to date`);
   } else {
-    lines.push(`latest on npm: ${latest.version} — run ${brand()} upgrade`);
+    lines.push(`latest on npm: ${latest.version}, run ${brand()} upgrade`);
   }
   return lines.join("\n");
 }

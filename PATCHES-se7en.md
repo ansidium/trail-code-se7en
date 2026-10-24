@@ -2,7 +2,7 @@
 
 This file inventories the fork delta from `trailhq/Trail-Code`.
 
-The fork is synchronized with upstream `main` after `0.23.1` (`22aa846`) and is named
+The fork is synchronized with upstream `0.25.0` (`257672a`) and is named
 `trail-code-se7en`. Its primary command is `trail`; `graft` remains a compatible
 alias from the same package, not a second installation. Pascal's
 case-insensitive resolution remains compatible with upstream's language-family
@@ -15,7 +15,9 @@ the newer upstream base, including Gleam support, `web-tree-sitter` `0.27` (the
 checked-in Pascal grammar still loads under it), and upstream's refusal of YAML
 anchors and aliases, ported onto the fork's `js-yaml` adapter. Fork release
 `0.23.4` installs from GitHub without `npm install -g github:…`, which npm 11
-cannot build inside a global install.
+cannot build inside a global install. Fork release `0.25.0` retains these
+contracts while adopting upstream's learned skills, readiness probes, init
+review, and lightweight shell hooks.
 
 ## Modified upstream files
 
@@ -34,11 +36,12 @@ cannot build inside a global install.
 - `src/brand.ts`, `src/claude/hook-layers.ts` — recognize fork-aware Trail shims so global/repo hooks do not double-run or falsely report a stranded installation.
 - `src/claude/skill-template.ts`, `scripts/postinstall.mjs`, `src/graph/native.ts` — installation guidance and postinstall branding use the renamed fork; every install hint is `FORK_SETUP` (`npx -y --package github:ansidium/trail-code-se7en trail upgrade`).
 - `src/upkeep.ts` — update nudges retain the running brand and direct maintainers to synchronize the fork and run `FORK_SETUP`.
-- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity), created inside upstream's per-run temp folder so one cleanup removes both. `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`.
+- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity), created inside upstream's per-run temp folder so one cleanup removes both. `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`. Windows runs at most four test files concurrently so competing git spawns do not consume the unchanged readiness-probe deadlines.
 - `src/ask/ask.ts`, `src/context/savings.ts`, `src/claude/format.ts`, `src/claude/session-metrics.ts` — keep locale-stable numeric formatting while retaining upstream's savings reporting.
 - `test/mcp-tools.test.ts` — covers workspace file API routing.
 - `test/covers.test.ts` — exercises the same frontmatter adapter as production.
 - `test/hosts-mcp-config.test.ts`, `test/cli-meta.test.ts`, `test/upkeep.test.ts`, `test/upkeep-hooks.test.ts`, `test/claude-shim-resolve.test.ts`, `test/trail-notes.test.ts`, `test/graph-native-fallback.test.ts` — assertions follow the GitHub launch/upgrade lines above; `test/cli-meta.test.ts` also covers how npm is launched on each platform.
+- Hook global-copy and pre-bash fixtures expose the fork package. Windows fixtures use native file operations, keep the POSIX zombie check platform-specific, and preserve the process-exit proof everywhere. The generated Trail skill fixture retains `FORK_SETUP`.
 
 ## Added files
 

@@ -70,7 +70,11 @@ const env = { ...process.env, ...gitEnv, ...tmpEnv, HOME: home, USERPROFILE: hom
 delete env.CLAUDE_CONFIG_DIR;
 delete env.TRAIL_HOME;
 
-const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...files], {
+// Hundreds of test files launching git at once can exhaust a 150 ms read-only
+// probe deadline on Windows. Bound competing workers without changing the
+// production deadline or the tests that enforce it.
+const concurrency = process.platform === "win32" ? ["--test-concurrency=4"] : [];
+const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...concurrency, ...files], {
   cwd: repoRoot,
   stdio: "inherit",
   env,
