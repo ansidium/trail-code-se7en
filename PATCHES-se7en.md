@@ -2,7 +2,7 @@
 
 This file inventories the fork delta from `trailhq/Trail-Code`.
 
-The fork is synchronized with upstream `0.25.0` (`257672a`) and is named
+The fork is synchronized with upstream `0.27.0` (`961a9e8`) and is named
 `trail-code-se7en`. Its primary command is `trail`; `graft` remains a compatible
 alias from the same package, not a second installation. Pascal's
 case-insensitive resolution remains compatible with upstream's language-family
@@ -18,6 +18,12 @@ anchors and aliases, ported onto the fork's `js-yaml` adapter. Fork release
 cannot build inside a global install. Fork release `0.25.0` retains these
 contracts while adopting upstream's learned skills, readiness probes, init
 review, and lightweight shell hooks.
+
+Fork release `0.27.0` retains the same Delphi extraction, safe frontmatter,
+fork-pinned installers, and portable shared wiring while adopting upstream's
+connector parity, automatic agent selection, first-use code maps, and current
+cloud/session integrations. Installing the fork does not itself authorize cloud
+sign-in or a new agent initialization.
 
 ## Modified upstream files
 
@@ -36,7 +42,7 @@ review, and lightweight shell hooks.
 - `src/brand.ts`, `src/claude/hook-layers.ts` — recognize fork-aware Trail shims so global/repo hooks do not double-run or falsely report a stranded installation.
 - `src/claude/skill-template.ts`, `scripts/postinstall.mjs`, `src/graph/native.ts` — installation guidance and postinstall branding use the renamed fork; every install hint is `FORK_SETUP` (`npx -y --package github:ansidium/trail-code-se7en trail upgrade`).
 - `src/upkeep.ts` — update nudges retain the running brand and direct maintainers to synchronize the fork and run `FORK_SETUP`.
-- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity), created inside upstream's per-run temp folder so one cleanup removes both. `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`. Windows runs at most four test files concurrently so competing git spawns do not consume the unchanged readiness-probe deadlines.
+- `scripts/run-tests.mjs` — runs the suite under a throwaway home (`HOME` and `USERPROFILE`, with its own git identity), created inside upstream's per-run temp folder so one cleanup removes both. Test arguments stay relative to the child working directory to avoid Windows command-line limits in deep checkouts. `graft init` retracts every agent it isn't wiring, so tests that spawn it without their own home rewired the developer's real `~/.claude` and `~/.codex`. Windows runs at most four test files concurrently so competing git spawns do not consume the unchanged readiness-probe deadlines.
 - `src/ask/ask.ts`, `src/context/savings.ts`, `src/claude/format.ts`, `src/claude/session-metrics.ts` — keep locale-stable numeric formatting while retaining upstream's savings reporting.
 - `test/mcp-tools.test.ts` — covers workspace file API routing.
 - `test/covers.test.ts` — exercises the same frontmatter adapter as production.

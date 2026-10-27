@@ -12,6 +12,35 @@ const runnerSource = readFileSync(runnerUrl, "utf8")
   .replace(/^import [^;]+;\s*$/gm, "")
   .replaceAll("import.meta.url", "runnerUrl");
 
+test("the Windows runner keeps enumerated test paths relative in a deep checkout", () => {
+  const files = Array.from({ length: 600 }, (_, i) => `unit-${String(i).padStart(4, "0")}.test.ts`);
+  const deepUrl = new URL(`../${"long-subdirectory/".repeat(20)}scripts/run-tests.mjs`, import.meta.url);
+  let childArgs: string[] = [];
+  let childCwd = "";
+  runInNewContext(runnerSource, {
+    runnerUrl: deepUrl.href,
+    dirname, join, resolve, fileURLToPath,
+    tmpdir: () => resolve("virtual", "temp"),
+    readdirSync: () => files,
+    mkdtempSync: () => resolve("virtual", "scratch"),
+    writeFileSync: () => {}, rmSync: () => {},
+    spawnSync: (_command: string, args: string[], options: { cwd: string }) => {
+      childArgs = args;
+      childCwd = options.cwd;
+      return { status: 0 };
+    },
+    process: {
+      env: {}, platform: "win32", execPath: resolve("virtual", "node.exe"),
+      exit: (code: number) => assert.equal(code, 0),
+    },
+    console: { error: (...args: unknown[]) => assert.fail(args.join(" ")) },
+  });
+  assert.equal(childCwd, resolve(dirname(fileURLToPath(deepUrl)), ".."));
+  assert.deepEqual(Array.from(childArgs.filter(arg => arg.endsWith(".test.ts"))), files.map(file => join("test", file)));
+  assert.ok(childArgs.includes("--test-concurrency=4"));
+  assert.ok(childArgs.join(" ").length < 32767, "a deep checkout must not expand every test argument into an absolute path");
+});
+
 for (const externalTrailHome of [undefined, resolve("external", "custom-trail-home")]) {
   test(`the runner confines Trail writes to its scratch home with TRAIL_HOME ${externalTrailHome ? "set" : "unset"}`, () => {
     const scratch = resolve("virtual", "suite-home");

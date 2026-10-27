@@ -24,7 +24,9 @@ const testDir = join(repoRoot, "test");
 const files = readdirSync(testDir)
   .filter((f) => f.endsWith(".test.ts"))
   .sort()
-  .map((f) => join(testDir, f));
+  // The child already runs in repoRoot. Relative arguments keep large suites
+  // below Windows' command-line limit even when the checkout path is deep.
+  .map((f) => join("test", f));
 
 if (files.length === 0) {
   console.error(`✗ no test files found in ${testDir}`);
