@@ -291,7 +291,7 @@ function withoutCatHeredocs(head: string): string | null {
     out += `${head.slice(i, j)}""`;
     i = end + close[0].length;
   }
-  return /`|[<>]\(/.test(out) ? null : out;
+  return /`/.test(out) || hasProcessSubstitution(out) ? null : out;
 }
 
 /** `head` with its quoted text ('…', "…", $'…') blanked: the words the shell splits on its own. One pass. */
@@ -309,6 +309,12 @@ function unquotedText(head: string): string {
     i = j < 0 ? head.length : j;
   }
   return out;
+}
+
+/** Shell process substitution is unquoted syntax, not a quoted JavaScript `=>({ ... })`.
+ * Command substitutions remain fail-closed in withoutCatHeredocs, even inside double quotes. */
+function hasProcessSubstitution(text: string): boolean {
+  return /[<>]\(/.test(text) && /[<>]\(/.test(unquotedText(text));
 }
 
 /**
@@ -374,7 +380,7 @@ export function quotedTextHit<T>(cmd: string, hitOf: (text: string) => T | null,
   const { segs } = scan(s);
   // A process substitution anywhere can be where the text goes (`exec > >(sh); echo "…"`); not one inside a literal
   // heredoc body (`<<'EOF'`: source text an interpreter edits, fix-lab5).
-  if (/[<>]\(/.test(s) && /[<>]\(/.test(outsideLiterals(s, segs))) return whole;
+  if (/[<>]\(/.test(s) && hasProcessSubstitution(outsideLiterals(s, segs))) return whole;
   let fed = false;
   let carried = false;
   for (const p of segs) {
@@ -446,7 +452,7 @@ const NODE_RUNS = /^(?:-e|-p|--eval|--print|-r|--require|--import|--loader|--exp
 
 /** Text with its '…' parts removed: a `$(…)` or backtick left in it is a substitution the shell runs. */
 function substitutes(text: string): boolean {
-  return /\$\(|`|[<>]\(/.test(text.replace(/'[^']*'/g, "''"));
+  return /\$\(|`/.test(text.replace(/'[^']*'/g, "''")) || hasProcessSubstitution(text);
 }
 
 /** Whether code an interpreter is given (`node -e`, `python3 - <<EOF`) runs a hook script it names. */

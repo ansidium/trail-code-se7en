@@ -29,6 +29,12 @@ Fork release `0.28.0` adopts upstream's npx PATH detection and commit-check
 fixes. MCP registration remains explicitly pinned to this fork even when an
 official `trail` command is on PATH; the explicit `onPath` override is retained.
 
+Fork release `0.28.1` fixes the hook guard's treatment of quoted JavaScript
+object-returning arrows (`=>({ ... })`): they are not shell process
+substitutions. File inspection and hashing stay permitted, while actual hook
+imports, execution, command substitutions, pipes and process substitutions
+remain guarded. No guard switch or runtime budget is changed.
+
 ## Modified upstream files
 
 - `package.json` — names the fork `trail-code-se7en`, exports both CLI entry points, identifies the fork repository, and replaces `gray-matter` with modern `js-yaml` and development types.

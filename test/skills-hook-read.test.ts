@@ -68,6 +68,46 @@ test('reading the hook script (grep, sed, cat, less, head, tail, wc, git log) is
   }
 });
 
+// A JavaScript arrow returning an object contains `>(`, but inside shell quotes
+// it is code, not a shell process substitution. Hashing a hook file must stay a read.
+const INSPECT_CODE = 'import fs from "node:fs";import crypto from "node:crypto";'
+  + 'const files=["node_modules/trail-code-se7en/dist/claude/pre-bash.js"];'
+  + 'console.log(files.map(f=>({file:f,sha256:crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex")})));';
+const INSPECTIONS = [
+  `node --input-type=module -e '${INSPECT_CODE}'`,
+  `node --input-type=module -e ${JSON.stringify(INSPECT_CODE)}`,
+  `env CI=1 node --input-type=module -e '${INSPECT_CODE}'`,
+  `node --input-type=module -e '${INSPECT_CODE}'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+];
+
+test('quoted object-returning arrow functions that inspect hook files are not shell process substitutions', async () => {
+  for (const cmd of INSPECTIONS) {
+    assert.equal(agentGuard(cmd), null, cmd);
+    const d = await preBashSkills(input(cmd), '/tmp', ENV, cmd);
+    assert.notEqual(d?.permissionDecision, 'deny', cmd);
+    assert.equal(tamperOf('Bash', { command: cmd }, cmd, CTX), null, cmd);
+  }
+});
+
+test('object-returning arrows do not hide hook imports, execution or real shell process substitutions', async () => {
+  for (const cmd of [
+    `node -e '[1].map(n=>({loaded:require("./${H}")}))'`,
+    `node --input-type=module -e 'import("./dist/claude/hooks.js").then(m=>({result:m.main("prompt")}))'`,
+    `node --input-type=module -e '${INSPECT_CODE}' && node ${H} stop`,
+    `cat <(node ${H} stop)`,
+    `exec > >(node ${H} stop); echo '{}'`,
+    `cat "$(cat <(node ${H} stop))"`,
+  ]) {
+    assert.ok(agentGuard(cmd), cmd);
+    const d = await preBashSkills(input(cmd), '/tmp', ENV, cmd);
+    assert.equal(d?.permissionDecision, 'deny', cmd);
+    assert.match(tamperOf('Bash', { command: cmd }, cmd, CTX) ?? '', /^Bash /, cmd);
+  }
+  const personOnly = 'exec > >(sh); echo "trail skills on"';
+  assert.equal(agentGuard(personOnly)?.hit, 'skills-on');
+  assert.equal((await preBashSkills(input(personOnly), '/tmp', ENV, personOnly))?.permissionDecision, 'deny');
+});
+
 test('running the hook script stays denied, through node, a shell, ./, xargs, a substitution, npx, env, a pipe or a copy', async () => {
   for (const cmd of RUNS) {
     assert.equal(agentGuard(cmd)?.hit, 'hook-script', cmd);
