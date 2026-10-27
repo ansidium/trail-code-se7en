@@ -5,7 +5,7 @@
  */
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { wallLessons, writeLesson } from '../src/skills/lessons.js';
 import { everyRepoDir } from '../src/notes/every-repo.js';
@@ -66,7 +66,7 @@ test('D117 (4): with the index warm, a wall hit reads 1,000 every-repo learnings
   assert.ok(median * 3 < cold, `the index pays: warm ${median.toFixed(1)} ms, cold ${cold.toFixed(1)} ms`);
 });
 
-test('D117 (4): a stale index is never believed: an edit in place, a new file, a removed one, a retired one, a link', () => {
+test('D117 (4): a stale index is never believed: an edit in place, a new file, a removed one, a retired one, a link', async () => {
   const env = home('stale');
   const a = wall(env, '2026-10-01', '"rootless Docker not found": colima start');
   const b = wall(env, '2026-10-02', '"rootless Docker not found": colima restart');
@@ -76,8 +76,14 @@ test('D117 (4): a stale index is never believed: an edit in place, a new file, a
   const t = new Date('2026-10-02T10:00:00.000Z');
   utimesSync(a, t, t);
   refreshLessonIndex(SHOP, env);
+  const indexedCtime = lstatSync(a).ctimeMs;
+  // NTFS can give consecutive writes the same ctime even at nanosecond
+  // precision. This fixture restores mtime, but relies on a distinct ctime:
+  // wait for a Windows clock tick rather than racing the metadata cache key.
+  if (process.platform === 'win32') await new Promise((resolve) => setTimeout(resolve, 32));
   writeFileSync(a, readFileSync(a, 'utf8').replaceAll('colima start', 'colima begin'));
   utimesSync(a, t, t);
+  assert.notEqual(lstatSync(a).ctimeMs, indexedCtime, 'the fixture must change ctime while preserving mtime and size');
   assert.ok(wallLessons('docker-rootless', SHOP, env).some((l) => l.text.endsWith('colima begin')), 'an edit in place is read');
   unlinkSync(b);
   assert.equal(wallLessons('docker-rootless', SHOP, env).length, 1, 'a removed file is gone');

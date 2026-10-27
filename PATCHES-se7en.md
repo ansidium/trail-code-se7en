@@ -2,7 +2,7 @@
 
 This file inventories the fork delta from `trailhq/Trail-Code`.
 
-The fork is synchronized with upstream `0.27.0` (`961a9e8`) and is named
+The fork is synchronized with upstream `0.28.0` (`25ea4c7`) and is named
 `trail-code-se7en`. Its primary command is `trail`; `graft` remains a compatible
 alias from the same package, not a second installation. Pascal's
 case-insensitive resolution remains compatible with upstream's language-family
@@ -24,6 +24,10 @@ fork-pinned installers, and portable shared wiring while adopting upstream's
 connector parity, automatic agent selection, first-use code maps, and current
 cloud/session integrations. Installing the fork does not itself authorize cloud
 sign-in or a new agent initialization.
+
+Fork release `0.28.0` adopts upstream's npx PATH detection and commit-check
+fixes. MCP registration remains explicitly pinned to this fork even when an
+official `trail` command is on PATH; the explicit `onPath` override is retained.
 
 ## Modified upstream files
 
@@ -48,6 +52,7 @@ sign-in or a new agent initialization.
 - `test/covers.test.ts` — exercises the same frontmatter adapter as production.
 - `test/hosts-mcp-config.test.ts`, `test/cli-meta.test.ts`, `test/upkeep.test.ts`, `test/upkeep-hooks.test.ts`, `test/claude-shim-resolve.test.ts`, `test/trail-notes.test.ts`, `test/graph-native-fallback.test.ts` — assertions follow the GitHub launch/upgrade lines above; `test/cli-meta.test.ts` also covers how npm is launched on each platform.
 - Hook global-copy and pre-bash fixtures expose the fork package. Windows fixtures use native file operations, keep the POSIX zombie check platform-specific, and preserve the process-exit proof everywhere. The generated Trail skill fixture retains `FORK_SETUP`.
+- `test/lesson-index-1b.test.ts` — the same-mtime, same-size edit fixture waits one Windows clock tick and asserts a distinct ctime. NTFS can otherwise give both writes identical timestamps; the metadata-keyed production cache and its performance budget are unchanged.
 
 ## Added files
 
