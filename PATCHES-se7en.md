@@ -35,6 +35,17 @@ substitutions. File inspection and hashing stay permitted, while actual hook
 imports, execution, command substitutions, pipes and process substitutions
 remain guarded. No guard switch or runtime budget is changed.
 
+Fork release `0.29.0` merges upstream's depth-tier WASM runtime and keeps
+Pascal on the existing breadth runtime, with the same licensed grammar and
+extractor. Both aliases, the tarball-based upgrade and the fork-pinned MCP
+launch remain in place. The upstream installer does not replace the fork's
+installer or introduce automatic cleanup of npm's global directories.
+
+The Windows hook guard recognizes literal PowerShell stdin SHA256 diagnostics
+only after a static, bounded parse proves a small read-only JavaScript grammar.
+Unknown syntax remains subject to the existing guard. The parser is loaded
+only for this diagnostic shape, outside the ordinary fast hook path.
+
 ## Modified upstream files
 
 - `package.json` — names the fork `trail-code-se7en`, exports both CLI entry points, identifies the fork repository, and replaces `gray-matter` with modern `js-yaml` and development types.
@@ -64,6 +75,7 @@ remain guarded. No guard switch or runtime budget is changed.
 
 - `src/graph/pascal.ts` — Pascal/Delphi symbols, spans, imports, bindings, deduplication, and call extraction. Before parsing, `preparePascalSource` neutralizes conditionals that split a routine and unsupported inline `for var X[: T] in`/`var A, B: T` syntax with same-length edits. Routine sections, parameters, supported counted loops and original source spans are preserved, including counted-loop initializers containing `in` expressions.
 - `src/fork.ts` — the package identity, the GitHub source, and `FORK_SETUP`, the one install/upgrade command shared by upgrades, agent configuration and hook templates.
+- `test/skills-powershell-hash-read.test.ts` — read-only hashing and guard regressions for Windows literal Node stdin.
 - `test/graph-pascal.test.ts` — unit, program, package, include, line-ending, large-file, conditional/inline-variable span, counted-loop preparation, and call-resolution coverage.
 - `src/util/frontmatter.ts`, `src/util/frontmatter-schema.ts` — the YAML/JSON frontmatter API and safe legacy scalar compatibility, retaining node body bytes and stable serialization. Parsing accepts a `js-yaml` `listener`; serialization writes with `noRefs`, so nothing it writes is refused on read.
 - `test/frontmatter.test.ts` — delimiter, scalar, serialization, parser-error, and removed-dependency regression coverage.

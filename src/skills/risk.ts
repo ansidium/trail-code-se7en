@@ -24,7 +24,7 @@
  * `shell.ts`, which loads only its lexer.
  */
 import type { GatedKind } from '../trace/types.js';
-import { hookUnrun, quotedTextHit, simpleCommands } from '../trace/shell.js';
+import { hookUnrun, isReadOnlyPowerShellHash, quotedTextHit, simpleCommands } from '../trace/shell.js';
 
 export const MAX_RUN_LINES = 12;
 export const MAX_STEP_CHARS = 300;
@@ -383,8 +383,9 @@ const namesHook = (t: string) => hookNamed(t) === true;
 const leavesHookUnrun = <T>(head: string, bodies: string[], hitOf: (text: string) => T | null) => hookUnrun(head, bodies, hitOf, namesHook);
 
 /** D116 item 2: the hook script is run, not only read (an argument of grep, sed, cat, a pager, head, git log) or named (fix-lab5). */
-function runsHookScript(raw: string): boolean {
+function runsHookScript(raw: string, powerShell: boolean): boolean {
   if (raw.length > TEXT_MAX) return true;
+  if (powerShell && isReadOnlyPowerShellHash(raw)) return false;
   return quotedTextHit(raw, hookNamed, true, 0, leavesHookUnrun) !== null;
 }
 
@@ -397,14 +398,14 @@ function restoreReason(c: string): string {
 }
 
 /** 4.11 agent guard: commands only the person may run, and Trail's hook scripts run by hand. Linear in the command. */
-export function agentGuard(cmd: string): { hit: GuardHit; reason: string } | null {
+export function agentGuard(cmd: string, powerShell = false): { hit: GuardHit; reason: string } | null {
   const raw = String(cmd ?? '');
   const c = shellWords(raw);
   const found = (hit: GuardHit) => ({ hit, reason: hit === 'restore-version' ? restoreReason(c) : REASONS[hit] });
   const fixed = staticSwitch(c);
   const ran = fixed && runsSwitch(raw, fixed, staticSwitch);
   if (ran) return found(ran);
-  if (HOOK_SCRIPT.some((re) => re.test(c)) && runsHookScript(raw)) return found('hook-script');
+  if (HOOK_SCRIPT.some((re) => re.test(c)) && runsHookScript(raw, powerShell)) return found('hook-script');
   const trailWord = TRAIL_WORD.test(c);
   const dynamic = dynamicSwitch(c, trailWord);
   const ranDynamic = dynamic && runsSwitch(raw, dynamic, (t) => dynamicSwitch(t, trailWord));

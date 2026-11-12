@@ -10,6 +10,7 @@
  * The PreToolUse fast path loads this file through `shell.ts`: its only
  * import is the lexer, which imports nothing.
  */
+import type { Expression, Identifier, Literal, ModuleDeclaration, Node, Statement, parse as parseJS } from 'acorn';
 import type { CallKind } from './types.js';
 import { ASSIGN, OPEN_KW, base, scan, unquote, words, type Piece } from './shell-scan.js';
 
@@ -500,3 +501,181 @@ export function hookUnrun<T>(head: string, bodies: string[], hitOf: (text: strin
 
 /** Files that hold text, never run as a script: what a heredoc writes into them only names a hook. */
 const TEXT_FILE = /\.(?:md|txt|json|jsonl|ya?ml|toml|ts|tsx|html|csv|log)$/i;
+
+// A literal PowerShell here-string, fed directly to Node's stdin. Only the
+// version probes that accompany installed-package diagnostics may precede it.
+// No interpolation, redirections, shell wrappers, preload flags or tail commands.
+const ENVELOPE = /^(?:[ \t]*(?:trail|graft)[ \t]+--version[ \t]*;)*(?:[ \t]*node[ \t]+'[a-z]:[\\/][\w .()\\/-]*[\\/]dist[\\/]bin[\\/](?:trail|graft)\.js'[ \t]+--version[ \t]*;)?[ \t]*@'\r?\n([\s\S]*?)\r?\n'@[ \t]*\|[ \t]*node[ \t]+-[ \t]*;?[ \t\r\n]*$/i;
+const MAX_BYTES = 16 * 1024;
+
+type Value = 'text' | 'data' | 'texts' | 'bytes' | 'hash' | 'fs' | 'path' | 'crypto' | 'void';
+type Binding = { kind: Value; mutable: boolean };
+type Scope = Map<string, Binding>;
+const intrinsic = new Set(['require', 'console', 'JSON', 'process']);
+const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
+const isData = (v: Value | null) => v === 'data' || v === 'text' || v === 'texts';
+const literal = (n: Node | null | undefined) => n?.type === 'Literal' ? (n as Literal).value : undefined;
+const identifier = (n: Node | null | undefined) => n?.type === 'Identifier' ? (n as Identifier).name : null;
+function key(n: Node, computed: boolean): string | null {
+  const name = (computed ? null : identifier(n)) ?? literal(n);
+  if (typeof name === 'number' && Number.isSafeInteger(name) && name >= 0) return String(name);
+  return typeof name === 'string' && !blockedKeys.has(name) ? name : null;
+}
+
+class ReadOnlyHash {
+  private remaining = 4096;
+  private read = false;
+  private digest = false;
+
+  accepts(body: (Statement | ModuleDeclaration)[]): boolean {
+    const scope: Scope = new Map();
+    return body.every(s => this.statement(s, scope)) && this.read && this.digest;
+  }
+
+  private bind(scope: Scope, name: string | null, kind: Value | null, mutable = false): boolean {
+    if (!name || !kind || kind === 'void' || intrinsic.has(name) || scope.has(name)) return false;
+    scope.set(name, { kind, mutable });
+    return true;
+  }
+
+  private statement(n: Statement | ModuleDeclaration, scope: Scope): boolean {
+    if (--this.remaining < 0) return false;
+    switch (n.type) {
+      case 'VariableDeclaration':
+        return (n.kind === 'const' || n.kind === 'let') && n.declarations.every(d =>
+          this.bind(scope, identifier(d.id), this.value(d.init, scope), n.kind === 'let'));
+      case 'BlockStatement': {
+        const inner = new Map(scope);
+        return n.body.every(s => this.statement(s, inner));
+      }
+      case 'ForOfStatement': {
+        const left = n.left;
+        if (n.await || left.type !== 'VariableDeclaration' || left.kind !== 'const' ||
+            left.declarations.length !== 1 || left.declarations[0]!.init ||
+            this.value(n.right, scope) !== 'texts') return false;
+        const inner = new Map(scope);
+        return this.bind(inner, identifier(left.declarations[0]!.id), 'text') && this.statement(n.body, inner);
+      }
+      case 'IfStatement':
+        return isData(this.value(n.test, scope)) && this.statement(n.consequent, new Map(scope)) &&
+          (!n.alternate || this.statement(n.alternate, new Map(scope)));
+      case 'ExpressionStatement': {
+        const expr = n.expression;
+        if (expr.type !== 'AssignmentExpression') return this.value(expr, scope) !== null;
+        if (expr.operator !== '=') return false;
+        const name = identifier(expr.left);
+        const binding = name ? scope.get(name) : undefined;
+        if (binding?.mutable && isData(binding.kind)) return this.value(expr.right, scope) === binding.kind;
+        const left = expr.left;
+        return left.type === 'MemberExpression' && !left.computed &&
+          identifier(left.object) === 'process' && identifier(left.property) === 'exitCode' &&
+          (literal(expr.right) === 0 || literal(expr.right) === 1);
+      }
+      default: return false;
+    }
+  }
+
+  private value(n: Expression | null | undefined, scope: Scope): Value | null {
+    if (!n || --this.remaining < 0) return null;
+    switch (n.type) {
+      case 'Literal':
+        return typeof n.value === 'string' ? 'text' :
+          n.value === null || typeof n.value === 'number' || typeof n.value === 'boolean' ? 'data' : null;
+      case 'Identifier': return scope.get(n.name)?.kind ?? null;
+      case 'ArrayExpression':
+        return n.elements.every(e => e && e.type !== 'SpreadElement' && this.value(e, scope) === 'text') ? 'texts' : null;
+      case 'ObjectExpression':
+        return n.properties.every(p => p.type === 'Property' && p.kind === 'init' && !p.method &&
+          !p.computed && key(p.key, false) !== null && isData(this.value(p.value as Expression, scope))) ? 'data' : null;
+      case 'MemberExpression': {
+        if (n.optional || n.object.type === 'Super') return null;
+        const name = key(n.property, n.computed);
+        if (name === null) return null;
+        const object = this.value(n.object, scope);
+        if (object === 'texts' && /^(?:0|[1-9]\d*)$/.test(name)) return 'text';
+        return isData(object) ? 'data' : null;
+      }
+      case 'UnaryExpression':
+        return n.operator === '!' && isData(this.value(n.argument, scope)) ? 'data' : null;
+      case 'BinaryExpression':
+      case 'LogicalExpression':
+        return ['===', '!==', '&&', '||'].includes(n.operator) &&
+          isData(this.value(n.left as Expression, scope)) && isData(this.value(n.right, scope)) ? 'data' : null;
+      case 'ConditionalExpression': {
+        if (!isData(this.value(n.test, scope))) return null;
+        const a = this.value(n.consequent, scope), b = this.value(n.alternate, scope);
+        return isData(a) && isData(b) ? (a === b ? a : 'data') : null;
+      }
+      case 'CallExpression': {
+        if (n.optional || n.arguments.some(a => a.type === 'SpreadElement')) return null;
+        const args = n.arguments as Expression[];
+        const first = args[0];
+        if (identifier(n.callee) === 'require' && args.length === 1) {
+          switch (literal(first)) {
+            case 'node:fs': return 'fs';
+            case 'node:path': return 'path';
+            case 'node:crypto': return 'crypto';
+            default: return null;
+          }
+        }
+        const callee = n.callee;
+        if (callee.type !== 'MemberExpression' || callee.optional || callee.computed || callee.object.type === 'Super') return null;
+        const method = identifier(callee.property);
+        const receiver = identifier(callee.object);
+        if (receiver === 'JSON' && args.length === 1) {
+          const arg = this.value(first, scope);
+          if (method === 'parse' && arg === 'text') return 'data';
+          if (method === 'stringify' && isData(arg)) return 'text';
+          return null;
+        }
+        if (receiver === 'console' && method === 'log' && args.every(a => isData(this.value(a, scope)))) return 'void';
+        const object = this.value(callee.object, scope);
+        if (object === 'fs' && method === 'readFileSync' && (args.length === 1 || (args.length === 2 && literal(args[1]) === 'utf8')) &&
+            this.value(first, scope) === 'text') {
+          this.read = true;
+          return args.length === 1 ? 'bytes' : 'text';
+        }
+        if (object === 'path' && method === 'join' && args.length && args.every(a => this.value(a, scope) === 'text')) return 'text';
+        if (object === 'crypto' && method === 'createHash' && args.length === 1 && literal(first) === 'sha256') return 'hash';
+        if (object === 'hash' && method === 'update' && args.length === 1) {
+          const arg = this.value(first, scope);
+          return arg === 'bytes' || arg === 'text' ? 'hash' : null;
+        }
+        if (object === 'hash' && method === 'digest' && args.length === 1 && literal(first) === 'hex') {
+          this.digest = true;
+          return 'text';
+        }
+        if (object === 'texts' && args.length === 1 && (method === 'map' || method === 'every') &&
+            (first?.type === 'FunctionExpression' || first?.type === 'ArrowFunctionExpression') &&
+            !first.async && !first.generator && first.params.length === 1) {
+          const inner = new Map(scope);
+          if (!this.bind(inner, identifier(first.params[0]), 'text')) return null;
+          const body = first.body;
+          const returned = body.type !== 'BlockStatement' ? body :
+            body.body.length === 1 && body.body[0]?.type === 'ReturnStatement' ? body.body[0].argument : null;
+          const value = this.value(returned, inner);
+          return method === 'map' ? (value === 'text' ? 'texts' : null) : (isData(value) ? 'data' : null);
+        }
+        return null;
+      }
+      default: return null;
+    }
+  }
+}
+
+/** Prove a small read-only JS grammar; unknown syntax and parse errors stay
+ * subject to the ordinary hook guard. The program is never evaluated here. */
+export function isReadOnlyPowerShellHash(command: string): boolean {
+  if (command.length > MAX_BYTES) return false;
+  const body = ENVELOPE.exec(command)?.[1];
+  if (!body || /(?:^|\r?\n)'@/.test(body)) return false;
+  try {
+    // Only this rare command shape loads a parser, not the ordinary hook path.
+    const module = process.getBuiltinModule('node:module');
+    if (!module) return false;
+    const { parse } = module.createRequire(import.meta.url)('acorn') as { parse: typeof parseJS };
+    return new ReadOnlyHash().accepts(parse(body, { ecmaVersion: 'latest', sourceType: 'script' }).body);
+  } catch {
+    return false;
+  }
+}

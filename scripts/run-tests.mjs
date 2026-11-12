@@ -46,6 +46,20 @@ const gitEnv = {
   GIT_CONFIG_KEY_1: "tag.gpgsign", GIT_CONFIG_VALUE_1: "false",
 };
 
+// Node runs one process per test file, `availableParallelism() - 1` at a time, and
+// each starts tsx — enough to pin every core of a shared dev box for minutes.
+// GRAFT_TEST_CONCURRENCY caps that; unset keeps Node's default (CI is unchanged).
+// A bad value stops the run rather than silently falling back to all cores.
+const concurrencyArgs = [];
+const rawConcurrency = process.env.GRAFT_TEST_CONCURRENCY;
+if (rawConcurrency !== undefined && rawConcurrency !== "") {
+  if (!/^[1-9]\d*$/.test(rawConcurrency)) {
+    console.error(`✗ GRAFT_TEST_CONCURRENCY must be a positive integer, got '${rawConcurrency}'`);
+    process.exit(1);
+  }
+  concurrencyArgs.push(`--test-concurrency=${rawConcurrency}`);
+}
+
 // Tests make thousands of scratch repos and homes under the temp folder and
 // don't all remove them: a day of runs left over 50,000 folders (6 GB). Give the
 // run its own temp folder and remove it at the end, whatever the outcome.
@@ -75,7 +89,7 @@ delete env.TRAIL_HOME;
 // Hundreds of test files launching git at once can exhaust a 150 ms read-only
 // probe deadline on Windows. Bound competing workers without changing the
 // production deadline or the tests that enforce it.
-const concurrency = process.platform === "win32" ? ["--test-concurrency=4"] : [];
+const concurrency = concurrencyArgs.length ? concurrencyArgs : process.platform === "win32" ? ["--test-concurrency=4"] : [];
 const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...concurrency, ...files], {
   cwd: repoRoot,
   stdio: "inherit",

@@ -20,11 +20,11 @@
 import type { CallKind } from './types.js';
 import { ASSIGN, OPEN_KW, base, cut, pieceText, scan, unquote, words, type Piece } from './shell-scan.js';
 import {
-  MAX_DEPTH, PLUMBING, RUNNERS, VALUE_FLAGS, afterTimeout, bareCommand, groupInner, heredocInterpreter, hookUnrun, inlineScript, programOfText, programWords,
+  MAX_DEPTH, PLUMBING, RUNNERS, VALUE_FLAGS, afterTimeout, bareCommand, groupInner, heredocInterpreter, hookUnrun, inlineScript, isReadOnlyPowerShellHash, programOfText, programWords,
   quotedTextHit, readsFiles, scriptKind, shellOnly, shellScript, simpleCommands, stripKeywords, writesFile,
 } from './shell-words.js';
 
-export { PLUMBING, RUNNERS, bareCommand, heredocInterpreter, hookUnrun, inlineScript, quotedTextHit, readsFiles, scriptKind, simpleCommands };
+export { PLUMBING, RUNNERS, bareCommand, heredocInterpreter, hookUnrun, inlineScript, isReadOnlyPowerShellHash, quotedTextHit, readsFiles, scriptKind, simpleCommands };
 
 export interface Segment { text: string; sep: '&&' | '||' | ';' | '|' | '&' | '' }
 

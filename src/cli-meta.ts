@@ -82,7 +82,7 @@ export function npmInvocation(args: readonly string[], platform: NodeJS.Platform
 
 function npmSync(args: readonly string[], options: SpawnSyncOptions) {
   const inv = npmInvocation(args);
-  return spawnSync(inv.command, inv.args, { ...options, shell: inv.shell });
+  return spawnSync(inv.command, inv.args, { ...options, shell: inv.shell, windowsHide: true });
 }
 
 export interface NpmViewResult {
@@ -162,6 +162,10 @@ export interface UpgradeResult {
   newVersion?: string;
   /** The `trail` package's version, when `graft upgrade` installed it alongside. */
   trailVersion?: string;
+  /** A plain fix for a failure we recognise, shown instead of npm's error block. */
+  fix?: string;
+  /** npm's own error output, for a failure we don't recognise. */
+  npmError?: string;
 }
 
 /** Pure formatter for a finished upgrade — no I/O, easy to unit-test. */

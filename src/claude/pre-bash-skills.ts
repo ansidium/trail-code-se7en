@@ -61,7 +61,12 @@ export async function preBashSkills(input: any, dir: string, env: NodeJS.Process
     const cmd = typeof command === 'string' ? command : typeof input?.tool_input?.command === 'string' ? input.tool_input.command : '';
     if (!cmd) return null;
     // 1. Any settings, no file read.
-    const guard = agentGuard(cmd);
+    // Codex's local Windows shell defaults to PowerShell. An explicit override
+    // must still be PowerShell; never reinterpret another host's shell text.
+    const shell = input?.tool_input?.shell;
+    const powerShell = process.platform === 'win32' && input?.tool_name === 'exec_command' &&
+      (shell === undefined || (typeof shell === 'string' && /(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i.test(shell)));
+    const guard = agentGuard(cmd, powerShell);
     if (guard) return { permissionDecision: 'deny', reason: `trail: ${guard.reason}` };
     // 2.
     if (!skillsOnFast(env)) return null;
