@@ -46,6 +46,10 @@ only after a static, bounded parse proves a small read-only JavaScript grammar.
 Unknown syntax remains subject to the existing guard. The parser is loaded
 only for this diagnostic shape, outside the ordinary fast hook path.
 
+Fork release `0.29.1` recognizes Codex's `Bash` PreToolUse label for its native
+Windows PowerShell route. Other hosts and explicit non-PowerShell shells do
+not get the read-only SHA256 exception; the command verifier is unchanged.
+
 ## Modified upstream files
 
 - `package.json` — names the fork `trail-code-se7en`, exports both CLI entry points, identifies the fork repository, and replaces `gray-matter` with modern `js-yaml` and development types.

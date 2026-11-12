@@ -61,11 +61,19 @@ export async function preBashSkills(input: any, dir: string, env: NodeJS.Process
     const cmd = typeof command === 'string' ? command : typeof input?.tool_input?.command === 'string' ? input.tool_input.command : '';
     if (!cmd) return null;
     // 1. Any settings, no file read.
-    // Codex's local Windows shell defaults to PowerShell. An explicit override
-    // must still be PowerShell; never reinterpret another host's shell text.
-    const shell = input?.tool_input?.shell;
-    const powerShell = process.platform === 'win32' && input?.tool_name === 'exec_command' &&
-      (shell === undefined || (typeof shell === 'string' && /(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i.test(shell)));
+    // Codex calls exec_command "Bash" in PreToolUse, even on native Windows.
+    // That label alone isn't a shell or host signal. Only recognize it on a
+    // Codex payload with matching arguments, and honor explicit overrides.
+    const args = input?.tool_input;
+    const shell = args?.shell;
+    const powerShell = process.platform === 'win32' &&
+      (shell === undefined || (typeof shell === 'string' && /(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i.test(shell))) &&
+      (input?.tool_name === 'exec_command' || (
+        input?.tool_name === 'Bash' && input.hook_event_name === 'PreToolUse' &&
+        typeof input.turn_id === 'string' && input.turn_id.length > 0 &&
+        args && typeof args === 'object' && !Array.isArray(args) && args.command === cmd &&
+        detectHost(input).host === 'codex'
+      ));
     const guard = agentGuard(cmd, powerShell);
     if (guard) return { permissionDecision: 'deny', reason: `trail: ${guard.reason}` };
     // 2.

@@ -105,6 +105,43 @@ test('no allow and no ask anywhere in Codex PreToolUse output; a deny carries on
   }
 });
 
+test('Codex Bash routes native Windows PowerShell hashes through the read-only guard', async () => {
+  const { b, s } = rig('cx-powershell-hash', 'default', null);
+  const body = [
+    "const fs = require('node:fs');",
+    "const crypto = require('node:crypto');",
+    "const digest = crypto.createHash('sha256').update(fs.readFileSync('dist/claude/pre-bash.js')).digest('hex');",
+    'console.log(digest);',
+  ].join('\r\n');
+  const hash = `trail --version; graft --version; @'\r\n${body}\r\n'@ | node -`;
+  const run = (command: string, extra?: Record<string, unknown>) => cxPreBash(s, at(22, 1), command, nextCall(s), extra);
+  const denied = (out: string) => assert.equal(one(out)?.hookSpecificOutput?.permissionDecision, 'deny');
+  try {
+    for (const extra of [undefined, { tool_input: { command: hash, shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' } }]) {
+      const out = await run(hash, extra);
+      if (process.platform === 'win32') assert.equal(out, '', 'native Codex PowerShell needs no allow decision');
+      else denied(out);
+    }
+    for (const extra of [
+      { turn_id: undefined, transcript_path: 'fixture/.claude/projects/test/session.jsonl' },
+      { turn_id: '' },
+      { conversation_id: 'cursor-turn' },
+      { tool_input: { command: hash, shell: 'bash' } },
+      { tool_input: { command: hash, shell: 'cmd.exe' } },
+      { tool_input: { command: hash, shell: null } },
+      { tool_input: JSON.stringify({ command: hash, shell: 'bash' }) },
+    ]) denied(await run(hash, extra));
+    for (const command of [
+      'node dist/claude/pre-bash.js',
+      'trail skills on',
+      hash.replace('console.log(digest);', "fs.writeFileSync('dist/claude/pre-bash.js', digest);"),
+      hash + ' > hashes.txt',
+    ]) denied(await run(command));
+  } finally {
+    done(b);
+  }
+});
+
 test('the fast path turns any allow into nothing and any ask into a deny on a Codex payload; Claude Code\'s are as before', () => {
   const codex = { session_id: 's', transcript_path: '/home/dev/.codex/sessions/2026/10/27/rollout-x.jsonl', turn_id: 't', tool_name: 'Bash', tool_input: { command: 'x' } };
   const claude = { session_id: 's', transcript_path: '/home/dev/.claude/projects/-x/s.jsonl', tool_name: 'Bash', tool_input: { command: 'x' } };
